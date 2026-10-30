@@ -1,5 +1,5 @@
 -- =========================================================================
--- HAWK909 DYNAMIC AUDIO TRACKER - THE ULTIMATE TITAN (ALL BUGS FIXED)
+-- HAWK909 DYNAMIC AUDIO TRACKER - THE ULTIMATE TITAN (ARCEUS X NEO & ANDROID)
 -- =========================================================================
 
 local Players = game:GetService("Players")
@@ -18,6 +18,11 @@ local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
+while not LocalPlayer do
+    Players.PlayerAdded:Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
 local songCache, lyricsCache = {}, {}
 local currentSongId, activeSound = nil, nil
 local activeLyrics = {}
@@ -29,10 +34,11 @@ local lyricOffset, lyricSpeed = 0.0, 1.0
 local autoChatEnabled, manualSpeedOverride, isMutedLocally = false, false, false
 local originalVolume = 0.5
 local isHologramEnabled, isMinimized, isCinematic = false, false, false
-local targetBaseFOV = workspace.CurrentCamera.FieldOfView
+local currentCam = Workspace.CurrentCamera or Workspace:WaitForChild("Camera", 5)
+local targetBaseFOV = currentCam and currentCam.FieldOfView or 70
 local originalFOV = targetBaseFOV
 local currentLyricProvider = "LRCLIB"
-local wasCinematicCam = false -- FIX CAMERA STUCK
+local wasCinematicCam = false
 
 -- // OVERLAY INDEPENDENT SETTINGS //
 local overlayMode = 0 -- 0=Mati, 1=Bawah Cine, 2=Kanan, 3=Kiri, 4=Subtitle
@@ -45,7 +51,11 @@ local ovSettings = {
 
 -- // 0. LOCAL MP3 INJECTOR ENGINE //
 local CustomAudioPlayer = Workspace:FindFirstChild("Hawk909LocalAudio")
-if not CustomAudioPlayer then CustomAudioPlayer = Instance.new("Sound"); CustomAudioPlayer.Name = "Hawk909LocalAudio"; CustomAudioPlayer.Parent = Workspace end
+if not CustomAudioPlayer then
+    CustomAudioPlayer = Instance.new("Sound")
+    CustomAudioPlayer.Name = "Hawk909LocalAudio"
+    CustomAudioPlayer.Parent = Workspace
+end
 
 -- CLEAN & SETUP POST-PROCESSING (DLSS 5 ENGINE)
 for _, v in pairs(Lighting:GetChildren()) do 
@@ -69,7 +79,7 @@ local cineOrbit, cineOTS, cineShake, cineDoFState, cineGlitch, cineVignette, cin
 local cineFOVPulse, cineLowAngle, cineRipple, cineSpotlight, cineDLSS = false, false, false, false, false
 
 pcall(function()
-    if isfile and isfile("Hawk909_TitanConfig_v3.txt") then
+    if type(isfile) == "function" and type(readfile) == "function" and isfile("Hawk909_TitanConfig_v3.txt") then
         local data = HttpService:JSONDecode(readfile("Hawk909_TitanConfig_v3.txt"))
         if data then
             holoOffsetX = data.X or 8; holoOffsetY = data.Y or 1.5; holoOffsetZ = data.Z or 0
@@ -84,7 +94,12 @@ pcall(function()
             cineRipple = data.CRipple or false; cineSpotlight = data.CSpot or false; cineDLSS = data.CDLSS or false
             
             overlayMode = data.OvMode or 0
-            if data.OvSets then ovSettings = data.OvSets end
+            if data.OvSets then
+                for k, v in pairs(data.OvSets) do
+                    local numKey = tonumber(k) or k
+                    if ovSettings[numKey] then ovSettings[numKey] = v end
+                end
+            end
         end
     end
 end)
@@ -99,7 +114,9 @@ local function SaveHoloSettings()
             CGhost = cineGhost, CFov = cineFOVPulse, CLow = cineLowAngle, CRipple = cineRipple, CSpot = cineSpotlight, CDLSS = cineDLSS,
             OvMode = overlayMode, OvSets = ovSettings
         }
-        if writefile then writefile("Hawk909_TitanConfig_v3.txt", HttpService:JSONEncode(data)) end
+        if type(writefile) == "function" then
+            writefile("Hawk909_TitanConfig_v3.txt", HttpService:JSONEncode(data))
+        end
     end)
 end
 
@@ -110,19 +127,42 @@ local overlayVisPosNames = {"Atas Lirik", "Bawah Lirik"}
 
 local function makeHoldable(btn, callback)
     local holding = false
-    btn.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then holding = true; callback(); task.wait(0.3); while holding do callback(); task.wait(0.04) end end end)
-    btn.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then holding = false end end)
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            holding = true
+            callback()
+            task.wait(0.3)
+            while holding do
+                callback()
+                task.wait(0.05)
+            end
+        end
+    end)
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            holding = false
+        end
+    end)
     btn.MouseLeave:Connect(function() holding = false end)
 end
 
--- Anti-AFK is executor/game dependent; this guarded callback may be unavailable on some mobile executors.
-task.spawn(function() LocalPlayer.Idled:Connect(function() pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new(0,0)) end) end) end)
+-- Anti-AFK (Guarded for Arceus X Neo & Android)
+task.spawn(function()
+    LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
+        end)
+    end)
+end)
 
 local function CleanSongName(name)
     if not name then return "" end
     local clean = name:gsub("%[.-%]", ""):gsub("%(.-%)", ""):gsub("%{.-%}", "")
     local tags = {"audio", "full song", "sped up", "slowed", "bass boosted", "nightcore", "tiktok", "remix", "clean", "explicit", "short", "cut", "mv", "music video"}
-    for _, tag in ipairs(tags) do clean = clean:gsub(tag, ""):gsub(tag:upper(), ""):gsub(tag:sub(1,1):upper() .. tag:sub(2), "") end
+    for _, tag in ipairs(tags) do
+        clean = clean:gsub(tag, ""):gsub(tag:upper(), ""):gsub(tag:sub(1,1):upper() .. tag:sub(2), "")
+    end
     clean = clean:gsub("[^%w%s%-]", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
     return (clean == "" or #clean < 2) and name or clean
 end
@@ -153,44 +193,73 @@ local function SendToChat(message)
     end)
 end
 
-local function getSafeParent() local success, core = pcall(function() return CoreGui end); return (success and core) and core or LocalPlayer:WaitForChild("PlayerGui") end
-local parentGui = getSafeParent(); local oldGui = parentGui:FindFirstChild("Hawk909_SpotifyWidget"); if oldGui then oldGui:Destroy() end
+-- ARCEUS X NEO SAFE GUI PARENTING (Supports gethui, CoreGui, and PlayerGui)
+local function getSafeParent()
+    if type(gethui) == "function" then
+        local ok, hui = pcall(gethui)
+        if ok and hui then return hui end
+    end
+    local success, core = pcall(function() return CoreGui end)
+    if success and core then return core end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
 
-local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "Hawk909_SpotifyWidget"; ScreenGui.ResetOnSpawn = false; ScreenGui.DisplayOrder = 9999; ScreenGui.IgnoreGuiInset = true; ScreenGui.Parent = parentGui
+local parentGui = getSafeParent()
+for _, target in ipairs({parentGui, CoreGui, LocalPlayer:FindFirstChild("PlayerGui")}) do
+    if target then
+        pcall(function()
+            local old = target:FindFirstChild("Hawk909_SpotifyWidget")
+            if old then old:Destroy() end
+        end)
+    end
+end
 
--- ANDROID / TOUCH COMPATIBILITY LAYER
--- Scales the existing fixed-pixel UI down on narrow screens and keeps it usable after rotation.
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Hawk909_SpotifyWidget"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 9999
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = parentGui
+
+-- ANDROID / ARCEUS X NEO ADAPTIVE SCALING
 local MobileScale = Instance.new("UIScale")
 MobileScale.Name = "Hawk909_MobileScale"
 MobileScale.Scale = 1
 MobileScale.Parent = ScreenGui
+
 local function UpdateMobileScale()
     local camera = Workspace.CurrentCamera
     if not camera then return end
     local viewport = camera.ViewportSize
-    -- Keep desktop sizing unchanged; scale down on narrow/short mobile screens.
-    local widthScale = math.max(0.62, math.min(1, (viewport.X - 16) / 550))
-    local heightScale = math.max(0.62, math.min(1, (viewport.Y - 32) / 360))
+    if viewport.X <= 0 or viewport.Y <= 0 then return end
+    local isTouchDevice = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+    local maxWidthNeeded = isTouchDevice and 580 or 550
+    local maxHeightNeeded = isTouchDevice and 440 or 360
+    local widthScale = math.clamp((viewport.X - 20) / maxWidthNeeded, 0.55, 1)
+    local heightScale = math.clamp((viewport.Y - 24) / maxHeightNeeded, 0.55, 1)
     MobileScale.Scale = math.min(widthScale, heightScale)
 end
+
 UpdateMobileScale()
-if Workspace.CurrentCamera then
-    Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateMobileScale)
-end
-Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-    task.defer(function()
+local camConn = nil
+local function BindCameraViewport()
+    if camConn then camConn:Disconnect(); camConn = nil end
+    if Workspace.CurrentCamera then
         UpdateMobileScale()
-        if Workspace.CurrentCamera then
-            Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateMobileScale)
-        end
-    end)
+        camConn = Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateMobileScale)
+    end
+end
+BindCameraViewport()
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    task.defer(BindCameraViewport)
 end)
 
 -- CINEMATIC LETTERBOX BARS
-local CineTop = Instance.new("Frame", ScreenGui); CineTop.Size = UDim2.new(1, 0, 0, 110); CineTop.Position = UDim2.new(0, 0, 0, -110); CineTop.BackgroundColor3 = Color3.new(0, 0, 0); CineTop.BorderSizePixel = 0; CineTop.ZIndex = -10
-local CineBottom = Instance.new("Frame", ScreenGui); CineBottom.Size = UDim2.new(1, 0, 0, 110); CineBottom.Position = UDim2.new(0, 0, 1, 0); CineBottom.BackgroundColor3 = Color3.new(0, 0, 0); CineBottom.BorderSizePixel = 0; CineBottom.ZIndex = -10
+local CineTop = Instance.new("Frame", ScreenGui); CineTop.Size = UDim2.new(1, 0, 0, 110); CineTop.Position = UDim2.new(0, 0, 0, -110); CineTop.BackgroundColor3 = Color3.new(0, 0, 0); CineTop.BorderSizePixel = 0; CineTop.ZIndex = 1
+local CineBottom = Instance.new("Frame", ScreenGui); CineBottom.Size = UDim2.new(1, 0, 0, 110); CineBottom.Position = UDim2.new(0, 0, 1, 0); CineBottom.BackgroundColor3 = Color3.new(0, 0, 0); CineBottom.BorderSizePixel = 0; CineBottom.ZIndex = 1
 
-local VignetteImg = Instance.new("ImageLabel", ScreenGui); VignetteImg.Size = UDim2.new(1, 0, 1, 0); VignetteImg.BackgroundTransparency = 1; VignetteImg.Image = "rbxassetid://7335689886"; VignetteImg.ImageColor3 = Color3.new(0,0,0); VignetteImg.ImageTransparency = 1; VignetteImg.ZIndex = -9; VignetteImg.Active = false
+local VignetteImg = Instance.new("ImageLabel", ScreenGui); VignetteImg.Size = UDim2.new(1, 0, 1, 0); VignetteImg.BackgroundTransparency = 1; VignetteImg.Image = "rbxassetid://7335689886"; VignetteImg.ImageColor3 = Color3.new(0,0,0); VignetteImg.ImageTransparency = 1; VignetteImg.ZIndex = 2; VignetteImg.Active = false
 
 -- // OVERLAY 2D ARCHITECTURE //
 local OvContainer = Instance.new("Frame", ScreenGui)
@@ -259,7 +328,7 @@ local vis3DBars = {}
 for i = 1, 50 do local bar = Instance.new("Frame", Vis3DContainer); bar.Size = UDim2.new(0, 6, 0, 2); bar.BackgroundColor3 = holoGlowColor; bar.BorderSizePixel = 0; bar.BackgroundTransparency = 0.1; table.insert(vis3DBars, bar) end
 
 -- WIDGET UTAMA (2D)
-local MainFrame = Instance.new("Frame"); MainFrame.Name = "MainFrame"; MainFrame.Size = UDim2.new(0, 550, 0, 175); MainFrame.AnchorPoint = Vector2.new(0.5, 0); MainFrame.Position = UDim2.new(0.5, 0, 0, -200); MainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 24); MainFrame.BackgroundTransparency = 0.05; MainFrame.BorderSizePixel = 0; MainFrame.ClipsDescendants = false; MainFrame.Active = true; MainFrame.Parent = ScreenGui
+local MainFrame = Instance.new("Frame"); MainFrame.Name = "MainFrame"; MainFrame.Size = UDim2.new(0, 550, 0, 175); MainFrame.AnchorPoint = Vector2.new(0.5, 0); MainFrame.Position = UDim2.new(0.5, 0, 0, -200); MainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 24); MainFrame.BackgroundTransparency = 0.05; MainFrame.BorderSizePixel = 0; MainFrame.ClipsDescendants = false; MainFrame.Active = true; MainFrame.ZIndex = 20; MainFrame.Parent = ScreenGui
 local InnerFrame = Instance.new("Frame"); InnerFrame.Size = UDim2.new(1, 0, 1, 0); InnerFrame.BackgroundTransparency = 1; InnerFrame.ClipsDescendants = true; InnerFrame.Parent = MainFrame
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12); Instance.new("UICorner", InnerFrame).CornerRadius = UDim.new(0, 12)
 local UIStroke = Instance.new("UIStroke", MainFrame); UIStroke.Color = Color3.fromRGB(30, 215, 96); UIStroke.Thickness = 1.5; UIStroke.Transparency = 0.3
@@ -322,7 +391,7 @@ HologramToggleBtn.Activated:Connect(function()
     HologramToggleBtn.Text = "3D Lirik: " .. (isHologramEnabled and "ON" or "OFF")
 end)
 
--- PANEL CONTAINERS
+-- PANEL CONTAINERS (Positioned safely inside MainFrame width so they never clip off mobile screens)
 local HoloSetPanel = Instance.new("Frame", MainFrame)
 local MediaPanel = Instance.new("Frame", MainFrame)
 local DirectorPanel = Instance.new("Frame", MainFrame)
@@ -348,7 +417,7 @@ end
 -- MASTER CINEMATIC MODE TRIGGER
 BtnCinematic.Activated:Connect(function()
     isCinematic = not isCinematic
-    local cam = workspace.CurrentCamera; CloseAllPanels()
+    CloseAllPanels()
 
     if isCinematic then
         targetBaseFOV = 50
@@ -380,7 +449,7 @@ local function CreateSettingRow(parent, yPos, labelText, getValue, step, callbac
 end
 
 -- A. Panel 3D Settings 
-HoloSetPanel.Size = UDim2.new(0, 280, 0, 260); HoloSetPanel.Position = UDim2.new(1, -280, 1, 5); HoloSetPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); HoloSetPanel.BorderSizePixel = 0; HoloSetPanel.Visible = false
+HoloSetPanel.Size = UDim2.new(0, 280, 0, 260); HoloSetPanel.AnchorPoint = Vector2.new(0.5, 0); HoloSetPanel.Position = UDim2.new(0.5, 0, 1, 5); HoloSetPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); HoloSetPanel.BorderSizePixel = 0; HoloSetPanel.Visible = false; HoloSetPanel.Active = true
 Instance.new("UICorner", HoloSetPanel).CornerRadius = UDim.new(0, 8); local PanelStroke = Instance.new("UIStroke", HoloSetPanel); PanelStroke.Color = Color3.fromRGB(30, 215, 96); PanelStroke.Thickness = 1.5
 local PanelTitle = Instance.new("TextLabel", HoloSetPanel); PanelTitle.Size = UDim2.new(1, 0, 0, 25); PanelTitle.BackgroundTransparency = 1; PanelTitle.Font = Enum.Font.GothamBold; PanelTitle.TextColor3 = Color3.new(1,1,1); PanelTitle.TextSize = 12; PanelTitle.Text = "Kustomisasi Lirik 3D Penuh"
 
@@ -417,9 +486,9 @@ TglVis3D.Activated:Connect(function() vis3DEnabled = not vis3DEnabled; TglVis3D.
 local TglParticles = Instance.new("TextButton", HoloSetPanel); TglParticles.Size = UDim2.new(0, 80, 0, 22); TglParticles.Position = UDim2.new(0, 190, 0, 215); TglParticles.BackgroundColor3 = particlesEnabled and Color3.fromRGB(30, 215, 96) or Color3.fromRGB(40, 40, 40); TglParticles.TextColor3 = particlesEnabled and Color3.new(0,0,0) or Color3.new(1,1,1); TglParticles.Font = Enum.Font.GothamBold; TglParticles.TextSize = 9; TglParticles.Text = "Partikel"; Instance.new("UICorner", TglParticles).CornerRadius = UDim.new(0,4)
 TglParticles.Activated:Connect(function() particlesEnabled = not particlesEnabled; TglParticles.BackgroundColor3 = particlesEnabled and Color3.fromRGB(30, 215, 96) or Color3.fromRGB(40, 40, 40); TglParticles.TextColor3 = particlesEnabled and Color3.new(0,0,0) or Color3.new(1,1,1); SaveHoloSettings() end)
 
--- E. PANEL OVERLAY 2D (📺) - INDEPENDENT SETTINGS LOGIC
-OverlayPanel.Size = UDim2.new(0, 280, 0, 255); OverlayPanel.Position = UDim2.new(1, -280, 1, 5); OverlayPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); OverlayPanel.BorderSizePixel = 0; OverlayPanel.Visible = false
-Instance.new("UICorner", OverlayPanel).CornerRadius = UDim.new(0, 8); Instance.new("UIStroke", OverlayPanel).Color = Color3.fromRGB(255, 100, 150); OverlayPanel.UIStroke.Thickness = 1.5
+-- E. PANEL OVERLAY 2D (📺)
+OverlayPanel.Size = UDim2.new(0, 280, 0, 255); OverlayPanel.AnchorPoint = Vector2.new(0.5, 0); OverlayPanel.Position = UDim2.new(0.5, 0, 1, 5); OverlayPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); OverlayPanel.BorderSizePixel = 0; OverlayPanel.Visible = false; OverlayPanel.Active = true
+Instance.new("UICorner", OverlayPanel).CornerRadius = UDim.new(0, 8); local OvStroke = Instance.new("UIStroke", OverlayPanel); OvStroke.Color = Color3.fromRGB(255, 100, 150); OvStroke.Thickness = 1.5
 local OvTitle = Instance.new("TextLabel", OverlayPanel); OvTitle.Size = UDim2.new(1, 0, 0, 25); OvTitle.BackgroundTransparency = 1; OvTitle.Font = Enum.Font.GothamBold; OvTitle.TextColor3 = Color3.new(1,1,1); OvTitle.TextSize = 12; OvTitle.Text = "Kustomisasi Lirik & Vis 2D"
 
 local BtnOvMode = Instance.new("TextButton", OverlayPanel); BtnOvMode.Size = UDim2.new(0, 260, 0, 22); BtnOvMode.Position = UDim2.new(0, 10, 0, 30); BtnOvMode.BackgroundColor3 = Color3.fromRGB(40, 40, 40); BtnOvMode.TextColor3 = Color3.new(1,1,1); BtnOvMode.Font = Enum.Font.GothamBold; BtnOvMode.TextSize = 11; BtnOvMode.Text = "Mode: " .. overlayModeNames[overlayMode + 1]; Instance.new("UICorner", BtnOvMode).CornerRadius = UDim.new(0,4)
@@ -508,16 +577,17 @@ end
 
 RefreshOverlayUI()
 
--- B. Panel Media Player
-MediaPanel.Size = UDim2.new(0, 200, 0, 110); MediaPanel.Position = UDim2.new(1, -490, 1, 5); MediaPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); MediaPanel.BorderSizePixel = 0; MediaPanel.Visible = false; Instance.new("UICorner", MediaPanel).CornerRadius = UDim.new(0, 8); Instance.new("UIStroke", MediaPanel).Color = Color3.fromRGB(30, 215, 96); MediaPanel.UIStroke.Thickness = 1.5
+-- B. Panel Media Player (Centered under MainFrame for mobile screens)
+MediaPanel.Size = UDim2.new(0, 220, 0, 110); MediaPanel.AnchorPoint = Vector2.new(0.5, 0); MediaPanel.Position = UDim2.new(0.5, 0, 1, 5); MediaPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); MediaPanel.BorderSizePixel = 0; MediaPanel.Visible = false; MediaPanel.Active = true
+Instance.new("UICorner", MediaPanel).CornerRadius = UDim.new(0, 8); local MediaStroke = Instance.new("UIStroke", MediaPanel); MediaStroke.Color = Color3.fromRGB(30, 215, 96); MediaStroke.Thickness = 1.5
 local MediaTitle = Instance.new("TextLabel", MediaPanel); MediaTitle.Size = UDim2.new(1, 0, 0, 25); MediaTitle.BackgroundTransparency = 1; MediaTitle.Font = Enum.Font.GothamBold; MediaTitle.TextColor3 = Color3.new(1,1,1); MediaTitle.TextSize = 12; MediaTitle.Text = "Local Media Player"
-local AudioInput = Instance.new("TextBox", MediaPanel); AudioInput.Size = UDim2.new(1, -20, 0, 25); AudioInput.Position = UDim2.new(0, 10, 0, 35); AudioInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40); AudioInput.TextColor3 = Color3.new(1,1,1); AudioInput.Font = Enum.Font.Gotham; AudioInput.TextSize = 12; AudioInput.PlaceholderText = "Masukkan ID Lagu..."; AudioInput.Text = ""; Instance.new("UICorner", AudioInput).CornerRadius = UDim.new(0, 4)
+local AudioInput = Instance.new("TextBox", MediaPanel); AudioInput.Size = UDim2.new(1, -20, 0, 25); AudioInput.Position = UDim2.new(0, 10, 0, 35); AudioInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40); AudioInput.TextColor3 = Color3.new(1,1,1); AudioInput.Font = Enum.Font.Gotham; AudioInput.TextSize = 12; AudioInput.PlaceholderText = "Masukkan ID Lagu..."; AudioInput.ClearTextOnFocus = false; AudioInput.Text = ""; Instance.new("UICorner", AudioInput).CornerRadius = UDim.new(0, 4)
 local BtnPlayLocal = Instance.new("TextButton", MediaPanel); BtnPlayLocal.Size = UDim2.new(0.5, -15, 0, 25); BtnPlayLocal.Position = UDim2.new(0, 10, 0, 70); BtnPlayLocal.BackgroundColor3 = Color3.fromRGB(30, 215, 96); BtnPlayLocal.TextColor3 = Color3.new(0,0,0); BtnPlayLocal.Font = Enum.Font.GothamBold; BtnPlayLocal.TextSize = 12; BtnPlayLocal.Text = "▶ Putar"; Instance.new("UICorner", BtnPlayLocal).CornerRadius = UDim.new(0, 4)
 local BtnStopLocal = Instance.new("TextButton", MediaPanel); BtnStopLocal.Size = UDim2.new(0.5, -15, 0, 25); BtnStopLocal.Position = UDim2.new(0.5, 5, 0, 70); BtnStopLocal.BackgroundColor3 = Color3.fromRGB(255, 50, 50); BtnStopLocal.TextColor3 = Color3.new(1,1,1); BtnStopLocal.Font = Enum.Font.GothamBold; BtnStopLocal.TextSize = 12; BtnStopLocal.Text = "⏹ Stop"; Instance.new("UICorner", BtnStopLocal).CornerRadius = UDim.new(0, 4)
 
--- C. DIRECTOR PANEL (🎬)
-DirectorPanel.Size = UDim2.new(0, 300, 0, 250); DirectorPanel.Position = UDim2.new(1, -590, 1, 5); DirectorPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); DirectorPanel.BorderSizePixel = 0; DirectorPanel.Visible = false
-Instance.new("UICorner", DirectorPanel).CornerRadius = UDim.new(0, 8); Instance.new("UIStroke", DirectorPanel).Color = Color3.fromRGB(200, 150, 255); DirectorPanel.UIStroke.Thickness = 1.5
+-- C. DIRECTOR PANEL (🎬) (Centered under MainFrame for mobile screens)
+DirectorPanel.Size = UDim2.new(0, 300, 0, 250); DirectorPanel.AnchorPoint = Vector2.new(0.5, 0); DirectorPanel.Position = UDim2.new(0.5, 0, 1, 5); DirectorPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); DirectorPanel.BorderSizePixel = 0; DirectorPanel.Visible = false; DirectorPanel.Active = true
+Instance.new("UICorner", DirectorPanel).CornerRadius = UDim.new(0, 8); local DirStroke = Instance.new("UIStroke", DirectorPanel); DirStroke.Color = Color3.fromRGB(200, 150, 255); DirStroke.Thickness = 1.5
 local DirTitle = Instance.new("TextLabel", DirectorPanel); DirTitle.Size = UDim2.new(1, 0, 0, 25); DirTitle.BackgroundTransparency = 1; DirTitle.Font = Enum.Font.GothamBold; DirTitle.TextColor3 = Color3.new(1,1,1); DirTitle.TextSize = 12; DirTitle.Text = "Mode Sutradara (Cinematic/VFX)"
 
 local function CreateDirToggle(name, state, x, y, callback)
@@ -540,12 +610,12 @@ CreateDirToggle("Ground Ripple", cineRipple, 155, 175, function(s) cineRipple = 
 CreateDirToggle("Spotlight", cineSpotlight, 10, 210, function(s) cineSpotlight = s; SaveHoloSettings() end)
 CreateDirToggle("DLSS 5 (RTX)", cineDLSS, 155, 210, function(s) cineDLSS = s; SaveHoloSettings() end)
 
--- D. PANEL PILIHAN LIRIK MULTIPLE & MANUAL SEARCH (📝)
-local LyricPanel = Instance.new("Frame", MainFrame)
-LyricPanel.Size = UDim2.new(0, 280, 0, 175); LyricPanel.Position = UDim2.new(1, -280, 1, 5); LyricPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); LyricPanel.BorderSizePixel = 0; LyricPanel.Visible = false; Instance.new("UICorner", LyricPanel).CornerRadius = UDim.new(0, 8); Instance.new("UIStroke", LyricPanel).Color = Color3.fromRGB(255, 200, 50); LyricPanel.UIStroke.Thickness = 1.5
+-- D. PANEL PILIHAN LIRIK MULTIPLE & MANUAL SEARCH (📝) (Fixed duplicate instance & wired up search button)
+LyricPanel.Size = UDim2.new(0, 280, 0, 175); LyricPanel.AnchorPoint = Vector2.new(0.5, 0); LyricPanel.Position = UDim2.new(0.5, 0, 1, 5); LyricPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20); LyricPanel.BorderSizePixel = 0; LyricPanel.Visible = false; LyricPanel.Active = true
+Instance.new("UICorner", LyricPanel).CornerRadius = UDim.new(0, 8); local LyrStroke = Instance.new("UIStroke", LyricPanel); LyrStroke.Color = Color3.fromRGB(255, 200, 50); LyrStroke.Thickness = 1.5
 local LyrPanelTitle = Instance.new("TextLabel", LyricPanel); LyrPanelTitle.Size = UDim2.new(1, 0, 0, 25); LyrPanelTitle.BackgroundTransparency = 1; LyrPanelTitle.Font = Enum.Font.GothamBold; LyrPanelTitle.TextColor3 = Color3.new(1,1,1); LyrPanelTitle.TextSize = 12; LyrPanelTitle.Text = "Pencarian Lirik Manual"
 
-local ManualSearchInput = Instance.new("TextBox", LyricPanel); ManualSearchInput.Size = UDim2.new(1, -120, 0, 24); ManualSearchInput.Position = UDim2.new(0, 10, 0, 30); ManualSearchInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40); ManualSearchInput.TextColor3 = Color3.new(1,1,1); ManualSearchInput.Font = Enum.Font.Gotham; ManualSearchInput.TextSize = 11; ManualSearchInput.PlaceholderText = "Ketik Judul & Artis..."; ManualSearchInput.Text = ""; Instance.new("UICorner", ManualSearchInput).CornerRadius = UDim.new(0, 4)
+local ManualSearchInput = Instance.new("TextBox", LyricPanel); ManualSearchInput.Size = UDim2.new(1, -120, 0, 24); ManualSearchInput.Position = UDim2.new(0, 10, 0, 30); ManualSearchInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40); ManualSearchInput.TextColor3 = Color3.new(1,1,1); ManualSearchInput.Font = Enum.Font.Gotham; ManualSearchInput.TextSize = 11; ManualSearchInput.PlaceholderText = "Ketik Judul & Artis..."; ManualSearchInput.ClearTextOnFocus = false; ManualSearchInput.Text = ""; Instance.new("UICorner", ManualSearchInput).CornerRadius = UDim.new(0, 4)
 
 local BtnProvider = Instance.new("TextButton", LyricPanel); BtnProvider.Size = UDim2.new(0, 55, 0, 24); BtnProvider.Position = UDim2.new(1, -105, 0, 30); BtnProvider.BackgroundColor3 = Color3.fromRGB(30, 100, 200); BtnProvider.TextColor3 = Color3.new(1,1,1); BtnProvider.Font = Enum.Font.GothamBold; BtnProvider.TextSize = 10; BtnProvider.Text = currentLyricProvider; Instance.new("UICorner", BtnProvider).CornerRadius = UDim.new(0, 4)
 BtnProvider.Activated:Connect(function()
@@ -599,25 +669,63 @@ BtnMinimize.Activated:Connect(function()
     else BtnMinimize.Text = "—"; TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 550, 0, 175)}):Play() end
 end)
 
+-- FIXED ANDROID TOUCH & MOUSE DRAG LOGIC (Accounts for UIScale and AnchorPoint 0.5)
 local dragging, dragInput, dragStart, startPos
-MainFrame.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; dragStart = input.Position; startPos = MainFrame.Position; input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end) end end)
-MainFrame.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end end)
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        local camera = Workspace.CurrentCamera
-        local viewport = camera and camera.ViewportSize or Vector2.new(800, 600)
-        local scale = MobileScale.Scale
-        local frameW = MainFrame.AbsoluteSize.X
-        local frameH = MainFrame.AbsoluteSize.Y
-        local x = math.clamp(startPos.X.Offset + delta.X, -viewport.X * 0.5 + 12, viewport.X * 0.5 - frameW + 12)
-        local y = math.clamp(startPos.Y.Offset + delta.Y, 8, viewport.Y - frameH - 8)
-        MainFrame.Position = UDim2.new(startPos.X.Scale, x, startPos.Y.Scale, y)
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
     end
 end)
-UserInputService.InputBegan:Connect(function(input, gp) if not gp and input.KeyCode == Enum.KeyCode.RightControl then ScreenGui.Enabled = not ScreenGui.Enabled end end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local scale = math.max(MobileScale.Scale, 0.01)
+        local delta = (input.Position - dragStart) / scale
+        local camera = Workspace.CurrentCamera
+        local viewport = camera and (camera.ViewportSize / scale) or Vector2.new(800, 600)
+        local halfW = MainFrame.Size.X.Offset * 0.5
+        local frameH = MainFrame.Size.Y.Offset
+        local minX = -viewport.X * 0.5 + halfW + 6
+        local maxX = viewport.X * 0.5 - halfW - 6
+        local minY = 6
+        local maxY = math.max(6, viewport.Y - frameH - 6)
+        local x = math.clamp(startPos.X.Offset + delta.X, minX, maxX)
+        local y = math.clamp(startPos.Y.Offset + delta.Y, minY, maxY)
+        MainFrame.Position = UDim2.new(0.5, x, 0, y)
+    end
+end)
+UserInputService.InputBegan:Connect(function(input, gp)
+    if not gp and input.KeyCode == Enum.KeyCode.RightControl then
+        ScreenGui.Enabled = not ScreenGui.Enabled
+    end
+end)
 
--- Touch-friendly floating visibility button (replaces the Right Ctrl shortcut on phones).
+local function ShowWidget()
+    if not isWidgetVisible then
+        isWidgetVisible = true
+        TweenService:Create(MainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0, 20)}):Play()
+    end
+end
+local function HideWidget()
+    if isWidgetVisible then
+        isWidgetVisible = false
+        CloseAllPanels()
+        TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 0, -200)}):Play()
+    end
+end
+
+-- DRAGGABLE ANDROID FLOATING TOGGLE BUTTON
 local MobileToggle = Instance.new("TextButton")
 MobileToggle.Name = "Hawk909_MobileToggle"
 MobileToggle.Size = UDim2.new(0, 46, 0, 46)
@@ -636,38 +744,92 @@ Instance.new("UICorner", MobileToggle).CornerRadius = UDim.new(1, 0)
 local MobileToggleStroke = Instance.new("UIStroke", MobileToggle)
 MobileToggleStroke.Color = Color3.fromRGB(30, 215, 96)
 MobileToggleStroke.Thickness = 1.5
+
+local toggleDrag, toggleDragInput, toggleDragStart, toggleStartPos, toggleMoved = false, nil, nil, nil, false
+MobileToggle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        toggleDrag = true
+        toggleMoved = false
+        toggleDragStart = input.Position
+        toggleStartPos = MobileToggle.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                toggleDrag = false
+            end
+        end)
+    end
+end)
+MobileToggle.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        toggleDragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == toggleDragInput and toggleDrag then
+        local delta = input.Position - toggleDragStart
+        if delta.Magnitude > 8 then
+            toggleMoved = true
+            local scale = math.max(MobileScale.Scale, 0.01)
+            local scaledDelta = delta / scale
+            MobileToggle.Position = UDim2.new(toggleStartPos.X.Scale, toggleStartPos.X.Offset + scaledDelta.X, toggleStartPos.Y.Scale, toggleStartPos.Y.Offset + scaledDelta.Y)
+        end
+    end
+end)
 MobileToggle.Activated:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-    if not MainFrame.Visible then CloseAllPanels() end
-    MobileToggle.Text = MainFrame.Visible and "♫" or "+"
+    if toggleMoved then return end
+    if not isWidgetVisible then
+        MainFrame.Visible = true
+        ShowWidget()
+        MobileToggle.Text = "♫"
+    else
+        MainFrame.Visible = not MainFrame.Visible
+        if not MainFrame.Visible then CloseAllPanels() end
+        MobileToggle.Text = MainFrame.Visible and "♫" or "+"
+    end
 end)
 
-local function ShowWidget() if not isWidgetVisible then isWidgetVisible = true; TweenService:Create(MainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0, 20)}):Play() end end
-local function HideWidget() if isWidgetVisible then isWidgetVisible = false; TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 0, -200)}):Play() end end
-
--- HTTP COMPATIBILITY WRAPPER
--- Executor HTTP APIs differ by Android executor. This tries common request APIs safely;
--- if none exists, game:HttpGet is attempted as a fallback. Unsupported APIs return nil cleanly.
+-- ARCEUS X NEO & ANDROID HTTP COMPATIBILITY WRAPPER
 local function HttpGetCompat(url)
     local requestFn = nil
-    if type(syn) == "table" and type(syn.request) == "function" then
-        requestFn = syn.request
+    if type(request) == "function" then
+        requestFn = request
     elseif type(http_request) == "function" then
         requestFn = http_request
-    elseif type(request) == "function" then
-        requestFn = request
+    elseif type(http) == "table" and type(http.request) == "function" then
+        requestFn = http.request
+    elseif type(syn) == "table" and type(syn.request) == "function" then
+        requestFn = syn.request
+    elseif type(fluxus) == "table" and type(fluxus.request) == "function" then
+        requestFn = fluxus.request
+    elseif type(Arceus) == "table" and type(Arceus.request) == "function" then
+        requestFn = Arceus.request
     end
+
     if requestFn then
-        local ok, response = pcall(requestFn, { Url = url, Method = "GET" })
+        local ok, response = pcall(requestFn, {
+            Url = url,
+            Method = "GET",
+            Headers = {
+                ["User-Agent"] = "Mozilla/5.0 (Linux; Android 13) Roblox/ArceusXNeo",
+                ["Accept"] = "application/json"
+            }
+        })
         if ok and type(response) == "table" then
             local status = tonumber(response.StatusCode or response.Status or 200)
-            if status and status >= 200 and status < 300 and type(response.Body) == "string" then
+            if status and status >= 200 and status < 300 and type(response.Body) == "string" and response.Body ~= "" then
                 return response.Body
             end
         end
     end
-    local ok, response = pcall(function() return game:HttpGet(url) end)
-    if ok and type(response) == "string" then return response end
+
+    local ok, response = pcall(function() return game:HttpGet(url, true) end)
+    if ok and type(response) == "string" and response ~= "" then
+        return response
+    end
+    local ok2, response2 = pcall(function() return game:HttpGetAsync(url) end)
+    if ok2 and type(response2) == "string" and response2 ~= "" then
+        return response2
+    end
     return nil
 end
 
@@ -744,6 +906,30 @@ local function FetchMultipleLyrics(query, isManual)
     return results
 end
 
+-- CONNECTED MANUAL LYRIC SEARCH BUTTON (Previously missing in original script)
+BtnSearchManual.Activated:Connect(function()
+    local q = ManualSearchInput.Text:match("^%s*(.-)%s*$")
+    if not q or q == "" then return end
+    BtnSearchManual.Text = "..."
+    for _, b in ipairs(LyricSelectionBtns) do b.Visible = false end
+    task.spawn(function()
+        local suc, matches = pcall(function() return FetchMultipleLyrics(q, true) end)
+        BtnSearchManual.Text = "Cari"
+        if suc and matches and #matches > 0 then
+            currentLyricMatches = matches
+            for i = 1, 3 do
+                if matches[i] then
+                    LyricSelectionBtns[i].Text = matches[i].TrackName .. " - " .. matches[i].ArtistName
+                    LyricSelectionBtns[i].Visible = true
+                end
+            end
+            SetActiveLyricData(matches[1])
+        else
+            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Lirik", Text = "Tidak ditemukan untuk: " .. q, Duration = 3 }) end)
+        end
+    end)
+end)
+
 local function FindPlayingSong()
     if CustomAudioPlayer and CustomAudioPlayer.IsPlaying then return CustomAudioPlayer end
     local bestSound = nil; local maxVolume = -1
@@ -805,9 +991,11 @@ local OverheadSpotlight = Instance.new("SpotLight", SpotlightPart); OverheadSpot
 
 -- // 1.5. EXTREME FIDELITY OVERRIDE: TRUE RTX & ANTI-ALIASING //
 local function ForceExtremeFidelity()
-    Lighting.GlobalShadows = true
-    Lighting.EnvironmentDiffuseScale = 1
-    Lighting.EnvironmentSpecularScale = 1
+    pcall(function()
+        Lighting.GlobalShadows = true
+        Lighting.EnvironmentDiffuseScale = 1
+        Lighting.EnvironmentSpecularScale = 1
+    end)
     
     local function UpgradeAccessory(char)
         if not char then return end
@@ -826,7 +1014,9 @@ local function ForceExtremeFidelity()
             if acc:IsA("Accessory") then
                 local handle = acc:FindFirstChild("Handle")
                 if handle then
-                    if handle:IsA("MeshPart") then handle.RenderFidelity = Enum.RenderFidelity.Precise end
+                    pcall(function()
+                        if handle:IsA("MeshPart") then handle.RenderFidelity = Enum.RenderFidelity.Precise end
+                    end)
                     handle.Material = Enum.Material.SmoothPlastic; handle.Reflectance = 0.15
                     if not handle:FindFirstChild("Hawk909_EdgeAA") then
                         local hl = Instance.new("Highlight", handle); hl.Name = "Hawk909_EdgeAA"; hl.Adornee = handle; hl.FillTransparency = 1; hl.OutlineColor = Color3.new(1, 1, 1); hl.OutlineTransparency = 0.7; hl.DepthMode = Enum.HighlightDepthMode.Occluded
@@ -837,12 +1027,11 @@ local function ForceExtremeFidelity()
             end
         end
     end
-    if LocalPlayer.Character then UpgradeAccessory(LocalPlayer.Character) end
-    LocalPlayer.CharacterAdded:Connect(function(char) UpgradeAccessory(char) end)
+    if LocalPlayer.Character then task.spawn(UpgradeAccessory, LocalPlayer.Character) end
+    LocalPlayer.CharacterAdded:Connect(function(char) task.spawn(UpgradeAccessory, char) end)
 end
 ForceExtremeFidelity()
 
-local wasCinematicCam = false -- FIX STUCK CAMERA
 -- // LOOP RENDER UTAMA (DLSS FRAME GEN EQUATION) //
 local orbitAngle = 0
 RunService.RenderStepped:Connect(function(dt)
@@ -850,7 +1039,8 @@ RunService.RenderStepped:Connect(function(dt)
 
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-    local cam = workspace.CurrentCamera
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
     
     local loudness = 0
     if activeSound and activeSound.IsPlaying then loudness = math.clamp(activeSound.PlaybackLoudness / 150, 0, 1.5) end
@@ -1098,8 +1288,11 @@ task.spawn(function()
                     local displayTitle = "Audio Tracker"
                     local displayArtist = "ID: " .. (string.match(rawId, "%d+") or "Custom")
                     local rawName = activeSound.Name ~= "Sound" and activeSound.Name or "Unknown Audio"
-                    local success, info = pcall(function() return MarketplaceService:GetProductInfo(tonumber(string.match(rawId, "%d+")), Enum.InfoType.Asset) end)
-                    if success and info and info.Name then rawName = info.Name end
+                    local assetIdNum = tonumber(string.match(rawId, "%d+"))
+                    if assetIdNum then
+                        local success, info = pcall(function() return MarketplaceService:GetProductInfo(assetIdNum, Enum.InfoType.Asset) end)
+                        if success and info and info.Name then rawName = info.Name end
+                    end
                     
                     if guiTitle ~= "" then
                         displayTitle = guiTitle
@@ -1142,4 +1335,4 @@ task.spawn(function()
     end
 end)
 
-print("Hawk909 Titan-Class: ALL SYSTEMS OPERATIONAL.")
+print("Hawk909 Titan-Class (Arceus X Neo & Android): ALL SYSTEMS OPERATIONAL.")
