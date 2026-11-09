@@ -1,6 +1,6 @@
--- KOPLINGTIFY LITE (UPDATED)
--- Fitur: Auto-sync durasi lagu, tanpa batas max speed 2x, deteksi & pencarian lagu otomatis.
--- Dibuat dengan API Roblox standar; tidak memakai file API / CoreGui / request khusus executor.
+-- KOPLINGTIFY LITE (ANDROID & MINIMIZE EDITION)
+-- Fitur: UI ramah layar sentuh Android, Mode Compact (Minimize), Mode Floating Icon,
+-- Auto-Sync durasi lagu, tanpa batas max speed 2x, Mute lokal, & Auto-Search pergantian lagu.
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -9,22 +9,31 @@ local TextChatService = game:GetService("TextChatService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 if not player then return end
 
+-- State & Variabel Utama
 local cache = {}
 local activeSound, activeSoundId = nil, nil
 local activeItem = nil
 local lyrics = {}
 local currentIndex = 0
-local lyricSpeed = 1.0 -- 1.0 = normal
-local syncOffset = 0.0 -- detik; positif memajukan lirik
+local lyricSpeed = 1.0
+local syncOffset = 0.0
 local manualSpeedOverride = false
 local autoSpeedSynced = false
+local isAutoRatioActive = false
 local autoChat = false
+local isMutedLocally = false
+local originalVolume = 0.5
 local lastSentLine = ""
 local scanToken = 0
+local isMinimized = false
+
+local FULL_SIZE = UDim2.new(0, 350, 0, 400)
+local MINI_SIZE = UDim2.new(0, 350, 0, 96)
 
 local function safeCall(fn, ...)
     local ok, result = pcall(fn, ...)
@@ -40,7 +49,6 @@ local function httpGet(url)
     return nil
 end
 
--- Pembersih judul lagu seperti di Koplingtify / Hawk909 biasa
 local function cleanSongName(name)
     if not name then return "" end
     local clean = name:gsub("%[.-%]", ""):gsub("%(.-%)", ""):gsub("%{.-%}", "")
@@ -50,7 +58,6 @@ local function cleanSongName(name)
         "short", "cut", "mv", "music video", "official", "lyrics", "lyric"
     }
     for _, tag in ipairs(tags) do
-        clean = clean:gsub("(?i)" .. tag, "")
         clean = clean:gsub(tag, ""):gsub(tag:upper(), ""):gsub(tag:sub(1,1):upper() .. tag:sub(2), "")
     end
     clean = clean:gsub("[^%w%s%-]", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
@@ -63,7 +70,7 @@ local function getAggressiveName(name)
     local splitStr = string.split(n, "-")[1]
     if not splitStr then return "" end
     n = string.split(splitStr, "|")[1]
-    n = string.split(n, "(")[1]
+    n = string.split(splitStr, "(")[1]
     n = string.split(n, "[")[1]
     return n:match("^%s*(.-)%s*$") or ""
 end
@@ -154,10 +161,11 @@ local function findSound()
     local roots = {workspace, game:GetService("SoundService"), player}
     for _, root in ipairs(roots) do
         for _, obj in ipairs(root:GetDescendants()) do
-            if obj:IsA("Sound") and obj.IsPlaying and obj.SoundId ~= "" and obj.Volume > 0 then
+            if obj:IsA("Sound") and obj.IsPlaying and obj.SoundId ~= "" and (obj.Volume > 0 or ( isMutedLocally and obj == activeSound )) then
                 if obj.TimeLength == 0 or obj.TimeLength > 15 then
-                    if obj.Volume > bestVolume then
-                        best, bestVolume = obj, obj.Volume
+                    local vol = (obj == activeSound and isMutedLocally) and originalVolume or obj.Volume
+                    if vol > bestVolume then
+                        best, bestVolume = obj, vol
                     end
                 end
             end
@@ -166,7 +174,7 @@ local function findSound()
     return best
 end
 
--- UI
+-- ======================== UI SETUP ========================
 local guiParent = player:WaitForChild("PlayerGui")
 local old = guiParent:FindFirstChild("KoplingtifyLite")
 if old then old:Destroy() end
@@ -174,21 +182,64 @@ if old then old:Destroy() end
 local gui = Instance.new("ScreenGui")
 gui.Name = "KoplingtifyLite"
 gui.ResetOnSpawn = false
-gui.DisplayOrder = 50
+gui.DisplayOrder = 100
+gui.IgnoreGuiInset = true
 gui.Parent = guiParent
 
+-- Frame Utama
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 340, 0, 365)
-main.Position = UDim2.new(0.5, -170, 0.18, 0)
-main.BackgroundColor3 = Color3.fromRGB(20, 22, 27)
+main.Size = FULL_SIZE
+main.AnchorPoint = Vector2.new(0.5, 0)
+main.Position = UDim2.new(0.5, 0, 0.08, 0)
+main.BackgroundColor3 = Color3.fromRGB(18, 20, 25)
+main.BackgroundTransparency = 0.04
 main.BorderSizePixel = 0
+main.ClipsDescendants = true
 main.Active = true
 main.Parent = gui
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
-local stroke = Instance.new("UIStroke", main)
-stroke.Color = Color3.fromRGB(30, 215, 125)
-stroke.Transparency = 0.25
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 14)
+
+local mainStroke = Instance.new("UIStroke", main)
+mainStroke.Color = Color3.fromRGB(30, 215, 115)
+mainStroke.Thickness = 1.5
+mainStroke.Transparency = 0.25
+
+-- Skala otomatis agar pas di layar HP kecil maupun tablet
+local uiScale = Instance.new("UIScale", main)
+local function updateScreenScale()
+    local cam = workspace.CurrentCamera
+    if cam then
+        local minDim = math.min(cam.ViewportSize.X, cam.ViewportSize.Y)
+        if minDim < 420 then
+            uiScale.Scale = math.clamp(minDim / 430, 0.78, 1)
+        else
+            uiScale.Scale = 1
+        end
+    end
+end
+updateScreenScale()
+if workspace.CurrentCamera then
+    workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScreenScale)
+end
+
+-- Tombol Mengambang (Floating Pill saat disembunyikan penuh)
+local floatBtn = Instance.new("TextButton")
+floatBtn.Name = "FloatingToggle"
+floatBtn.Size = UDim2.new(0, 52, 0, 52)
+floatBtn.Position = UDim2.new(0, 16, 0.45, 0)
+floatBtn.BackgroundColor3 = Color3.fromRGB(22, 26, 32)
+floatBtn.TextColor3 = Color3.fromRGB(30, 230, 135)
+floatBtn.Font = Enum.Font.GothamBold
+floatBtn.TextSize = 22
+floatBtn.Text = "🎵"
+floatBtn.Visible = false
+floatBtn.Active = true
+floatBtn.Parent = gui
+Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(1, 0)
+local floatStroke = Instance.new("UIStroke", floatBtn)
+floatStroke.Color = Color3.fromRGB(30, 215, 115)
+floatStroke.Thickness = 2
 
 local function makeLabel(parent, name, pos, size, text, fontSize, color)
     local obj = Instance.new("TextLabel")
@@ -205,18 +256,18 @@ local function makeLabel(parent, name, pos, size, text, fontSize, color)
     return obj
 end
 
-local function makeButton(parent, text, pos, size)
+local function makeButton(parent, text, pos, size, bgColor)
     local b = Instance.new("TextButton")
     b.Position = pos
     b.Size = size
-    b.BackgroundColor3 = Color3.fromRGB(39, 45, 51)
+    b.BackgroundColor3 = bgColor or Color3.fromRGB(36, 41, 49)
     b.TextColor3 = Color3.fromRGB(245, 245, 245)
     b.Font = Enum.Font.GothamSemibold
     b.TextSize = 12
     b.Text = text
     b.AutoButtonColor = true
     b.Parent = parent
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 7)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
     return b
 end
 
@@ -243,70 +294,259 @@ local function makeHoldable(btn, callback)
     end)
 end
 
-local header = makeLabel(main, "Header", UDim2.new(0, 12, 0, 7), UDim2.new(1, -55, 0, 25), "KOPLINGTIFY  •  LYRICS", 14, Color3.fromRGB(30, 230, 135))
-header.TextXAlignment = Enum.TextXAlignment.Left
-local close = makeButton(main, "×", UDim2.new(1, -36, 0, 7), UDim2.new(0, 26, 0, 25))
-close.BackgroundColor3 = Color3.fromRGB(120, 42, 48)
-close.MouseButton1Click:Connect(function() gui:Destroy() end)
+-- Fungsi Dragging Khusus Android & Mouse (Tanpa Mengganggu Scroll)
+local function enableDrag(dragHandle, targetFrame)
+    local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = targetFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    dragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            targetFrame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+-- ======================== HEADER BAR ========================
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 42)
+topBar.BackgroundColor3 = Color3.fromRGB(25, 29, 36)
+topBar.BorderSizePixel = 0
+topBar.Active = true
+topBar.Parent = main
+Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 14)
+
+local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 14, 0, 4), UDim2.new(1, -160, 0, 20), "KOPLINGTIFY LITE", 13, Color3.fromRGB(30, 230, 135))
+titleHeader.Font = Enum.Font.GothamBold
+titleHeader.TextXAlignment = Enum.TextXAlignment.Left
+
+local subHeader = makeLabel(topBar, "SubHeader", UDim2.new(0, 14, 0, 21), UDim2.new(1, -160, 0, 16), "Geser bar ini untuk memindahkan", 10, Color3.fromRGB(150, 158, 170))
+subHeader.TextXAlignment = Enum.TextXAlignment.Left
+subHeader.TextTruncate = Enum.TextTruncate.AtEnd
+
+-- Tombol Kontrol Header (Ukuran 32x30 agar nyaman disentuh di HP)
+local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -144, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
+local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -108, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
+local minBtn = makeButton(topBar, "—", UDim2.new(1, -72, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
+local closeBtn = makeButton(topBar, "×", UDim2.new(1, -36, 0, 6), UDim2.new(0, 28, 0, 30), Color3.fromRGB(135, 45, 52))
+closeBtn.TextSize = 16
+
+enableDrag(topBar, main)
+enableDrag(floatBtn, floatBtn)
+
+-- ======================== MINI LYRIC BAR (Tampil Saat Minimize) ========================
+local miniBar = Instance.new("Frame")
+miniBar.Name = "MiniBar"
+miniBar.Position = UDim2.new(0, 10, 0, 46)
+miniBar.Size = UDim2.new(1, -20, 0, 44)
+miniBar.BackgroundColor3 = Color3.fromRGB(26, 30, 38)
+miniBar.BorderSizePixel = 0
+miniBar.Visible = false
+miniBar.Parent = main
+Instance.new("UICorner", miniBar).CornerRadius = UDim.new(0, 9)
+
+local miniLyricText = makeLabel(miniBar, "MiniLyric", UDim2.new(0, 10, 0, 2), UDim2.new(1, -20, 1, -4), "Menunggu lagu...", 14, Color3.fromRGB(255, 255, 255))
+miniLyricText.Font = Enum.Font.GothamBold
+
+-- ======================== BODY CONTAINER (Disembunyikan Saat Minimize) ========================
+local body = Instance.new("Frame")
+body.Name = "Body"
+body.Position = UDim2.new(0, 0, 0, 44)
+body.Size = UDim2.new(1, 0, 1, -44)
+body.BackgroundTransparency = 1
+body.Parent = main
+
+-- Kotak Pencarian + Tombol Hapus (X) + Tombol Cari
+local searchBg = Instance.new("Frame")
+searchBg.Position = UDim2.new(0, 12, 0, 4)
+searchBg.Size = UDim2.new(1, -82, 0, 36)
+searchBg.BackgroundColor3 = Color3.fromRGB(30, 34, 42)
+searchBg.BorderSizePixel = 0
+searchBg.Parent = body
+Instance.new("UICorner", searchBg).CornerRadius = UDim.new(0, 8)
 
 local searchBox = Instance.new("TextBox")
-searchBox.Position = UDim2.new(0, 12, 0, 40)
-searchBox.Size = UDim2.new(1, -86, 0, 30)
-searchBox.BackgroundColor3 = Color3.fromRGB(34, 38, 44)
+searchBox.Position = UDim2.new(0, 10, 0, 0)
+searchBox.Size = UDim2.new(1, -38, 1, 0)
+searchBox.BackgroundTransparency = 1
 searchBox.TextColor3 = Color3.new(1, 1, 1)
-searchBox.PlaceholderColor3 = Color3.fromRGB(150, 155, 165)
+searchBox.PlaceholderColor3 = Color3.fromRGB(140, 148, 160)
 searchBox.PlaceholderText = "Cari judul lagu / artis..."
 searchBox.ClearTextOnFocus = false
 searchBox.Font = Enum.Font.Gotham
 searchBox.TextSize = 12
+searchBox.TextXAlignment = Enum.TextXAlignment.Left
 searchBox.Text = ""
-searchBox.Parent = main
-Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 7)
+searchBox.Parent = searchBg
 
-local searchBtn = makeButton(main, "CARI", UDim2.new(1, -66, 0, 40), UDim2.new(0, 54, 0, 30))
-searchBtn.BackgroundColor3 = Color3.fromRGB(30, 160, 95)
-local status = makeLabel(main, "Status", UDim2.new(0, 12, 0, 74), UDim2.new(1, -24, 0, 18), "Putar musik untuk mendeteksi audio atau cari lirik.", 10, Color3.fromRGB(165, 170, 180))
-status.TextXAlignment = Enum.TextXAlignment.Left
+local clearSearchBtn = makeButton(searchBg, "×", UDim2.new(1, -28, 0, 5), UDim2.new(0, 24, 0, 26), Color3.fromRGB(48, 54, 66))
+clearSearchBtn.TextSize = 14
+clearSearchBtn.MouseButton1Click:Connect(function()
+    searchBox.Text = ""
+    searchBox:CaptureFocus()
+end)
 
+local searchBtn = makeButton(body, "CARI", UDim2.new(1, -64, 0, 4), UDim2.new(0, 52, 0, 36), Color3.fromRGB(30, 165, 95))
+
+-- Daftar Hasil Pencarian (Tombol diperbesar untuk layar sentuh)
 local resultsFrame = Instance.new("ScrollingFrame")
-resultsFrame.Position = UDim2.new(0, 12, 0, 96)
-resultsFrame.Size = UDim2.new(1, -24, 0, 58)
-resultsFrame.BackgroundColor3 = Color3.fromRGB(27, 31, 37)
+resultsFrame.Position = UDim2.new(0, 12, 0, 46)
+resultsFrame.Size = UDim2.new(1, -24, 0, 68)
+resultsFrame.BackgroundColor3 = Color3.fromRGB(24, 28, 35)
 resultsFrame.BorderSizePixel = 0
-resultsFrame.ScrollBarThickness = 3
+resultsFrame.ScrollBarThickness = 5
+resultsFrame.ScrollBarImageColor3 = Color3.fromRGB(30, 215, 115)
 resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-resultsFrame.Parent = main
-Instance.new("UICorner", resultsFrame).CornerRadius = UDim.new(0, 7)
+resultsFrame.Parent = body
+Instance.new("UICorner", resultsFrame).CornerRadius = UDim.new(0, 8)
+
 local resultLayout = Instance.new("UIListLayout", resultsFrame)
-resultLayout.Padding = UDim.new(0, 3)
+resultLayout.Padding = UDim.new(0, 4)
 resultLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-local prevLine = makeLabel(main, "Previous", UDim2.new(0, 15, 0, 158), UDim2.new(1, -30, 0, 22), "", 11, Color3.fromRGB(135, 143, 153))
-local currentLine = makeLabel(main, "Current", UDim2.new(0, 15, 0, 181), UDim2.new(1, -30, 0, 42), "Menunggu lagu...", 16, Color3.fromRGB(255, 255, 255))
+local resultPad = Instance.new("UIPadding", resultsFrame)
+resultPad.PaddingTop = UDim.new(0, 4)
+resultPad.PaddingBottom = UDim.new(0, 4)
+resultPad.PaddingLeft = UDim.new(0, 4)
+resultPad.PaddingRight = UDim.new(0, 4)
+
+-- Panel Lirik Karaoke (Dapat diketuk untuk kirim manual / copy)
+local lyricCard = Instance.new("TextButton")
+lyricCard.Name = "LyricCard"
+lyricCard.Position = UDim2.new(0, 12, 0, 120)
+lyricCard.Size = UDim2.new(1, -24, 0, 102)
+lyricCard.BackgroundColor3 = Color3.fromRGB(24, 28, 35)
+lyricCard.BorderSizePixel = 0
+lyricCard.Text = ""
+lyricCard.AutoButtonColor = false
+lyricCard.Parent = body
+Instance.new("UICorner", lyricCard).CornerRadius = UDim.new(0, 10)
+local cardStroke = Instance.new("UIStroke", lyricCard)
+cardStroke.Color = Color3.fromRGB(45, 52, 65)
+cardStroke.Thickness = 1
+
+local prevLine = makeLabel(lyricCard, "Previous", UDim2.new(0, 10, 0, 6), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 138, 150))
+local currentLine = makeLabel(lyricCard, "Current", UDim2.new(0, 10, 0, 27), UDim2.new(1, -20, 0, 46), "Menunggu lagu...", 16, Color3.fromRGB(255, 255, 255))
 currentLine.Font = Enum.Font.GothamBold
-local nextLine = makeLabel(main, "Next", UDim2.new(0, 15, 0, 225), UDim2.new(1, -30, 0, 20), "", 11, Color3.fromRGB(135, 143, 153))
+local nextLine = makeLabel(lyricCard, "Next", UDim2.new(0, 10, 0, 75), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 138, 150))
 
-local syncInfo = makeLabel(main, "SyncInfo", UDim2.new(0, 12, 0, 250), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 10, Color3.fromRGB(30, 230, 135))
-syncInfo.TextXAlignment = Enum.TextXAlignment.Center
+-- Ketuk kotak lirik untuk langsung mengirim baris saat ini ke chat
+lyricCard.MouseButton1Click:Connect(function()
+    local txt = currentLine.Text
+    if txt ~= "" and txt ~= "Menunggu lagu..." and txt ~= "Mendeteksi lagu..." and txt ~= "Lirik tidak tersedia." and txt ~= "♪" then
+        sendChat(txt)
+        cardStroke.Color = Color3.fromRGB(30, 215, 115)
+        task.delay(0.25, function()
+            if cardStroke then cardStroke.Color = Color3.fromRGB(45, 52, 65) end
+        end)
+    end
+end)
 
-local slowerBtn = makeButton(main, "−", UDim2.new(0, 12, 0, 272), UDim2.new(0, 34, 0, 27))
-local speedBtn = makeButton(main, "1.00x", UDim2.new(0, 51, 0, 272), UDim2.new(0, 72, 0, 27))
-local fasterBtn = makeButton(main, "+", UDim2.new(0, 128, 0, 272), UDim2.new(0, 34, 0, 27))
-local offsetBackBtn = makeButton(main, "Lirik −0.25s", UDim2.new(0, 170, 0, 272), UDim2.new(0, 72, 0, 27))
-local offsetForwardBtn = makeButton(main, "Lirik +0.25s", UDim2.new(0, 247, 0, 272), UDim2.new(0, 81, 0, 27))
+-- Informasi Sinkronisasi
+local syncInfo = makeLabel(body, "SyncInfo", UDim2.new(0, 12, 0, 226), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(30, 230, 135))
+syncInfo.Font = Enum.Font.GothamSemibold
 
-local resetSyncBtn = makeButton(main, "RESET SINKRONISASI (AUTO)", UDim2.new(0, 12, 0, 304), UDim2.new(1, -24, 0, 24))
-resetSyncBtn.BackgroundColor3 = Color3.fromRGB(55, 65, 75)
+-- Kontrol Kecepatan & Offset (Tinggi 34px agar mudah ditekan di layar sentuh)
+local slowerBtn = makeButton(body, "−", UDim2.new(0, 12, 0, 248), UDim2.new(0, 42, 0, 34))
+slowerBtn.TextSize = 16
+local speedBtn = makeButton(body, "1.00x", UDim2.new(0, 58, 0, 248), UDim2.new(0, 68, 0, 34))
+local fasterBtn = makeButton(body, "+", UDim2.new(0, 130, 0, 248), UDim2.new(0, 42, 0, 34))
+fasterBtn.TextSize = 16
 
-local isAutoRatioActive = false
+local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 180, 0, 248), UDim2.new(0, 76, 0, 34))
+local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 262, 0, 248), UDim2.new(0, 76, 0, 34))
 
+-- Baris Bawah: Reset Auto-Sync & Toggle Auto-Chat
+local resetSyncBtn = makeButton(body, "🔄 AUTO SYNC", UDim2.new(0, 12, 0, 290), UDim2.new(0, 156, 0, 34), Color3.fromRGB(48, 58, 70))
+local chatBtn = makeButton(body, "💬 Auto-Chat: OFF", UDim2.new(0, 174, 0, 290), UDim2.new(0, 164, 0, 34), Color3.fromRGB(36, 41, 49))
+
+local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 330), UDim2.new(1, -24, 0, 18), "Tips: Ketuk kotak lirik untuk kirim manual ke chat.", 10, Color3.fromRGB(120, 128, 140))
+
+-- ======================== LOGIKA TOMBOL & MINIMIZE ========================
+
+local function setStatus(text)
+    subHeader.Text = text
+end
+
+-- 1. Tombol Minimize (Mode Compact vs Mode Penuh)
+minBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        minBtn.Text = "+"
+        body.Visible = false
+        miniBar.Visible = true
+        TweenService:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = MINI_SIZE}):Play()
+    else
+        minBtn.Text = "—"
+        miniBar.Visible = false
+        TweenService:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = FULL_SIZE}):Play()
+        task.delay(0.12, function()
+            if not isMinimized then body.Visible = true end
+        end)
+    end
+end)
+
+-- 2. Tombol Mode Floating Icon (Sembunyikan penuh ke tombol bulat 🎵)
+pillModeBtn.MouseButton1Click:Connect(function()
+    main.Visible = false
+    floatBtn.Visible = true
+end)
+
+floatBtn.MouseButton1Click:Connect(function()
+    floatBtn.Visible = false
+    main.Visible = true
+end)
+
+-- 3. Tombol Mute Audio Lokal
+muteBtn.MouseButton1Click:Connect(function()
+    isMutedLocally = not isMutedLocally
+    muteBtn.Text = isMutedLocally and "🔇" or "🔊"
+    muteBtn.BackgroundColor3 = isMutedLocally and Color3.fromRGB(135, 55, 55) or Color3.fromRGB(38, 44, 54)
+    if activeSound then
+        if isMutedLocally then
+            originalVolume = activeSound.Volume > 0 and activeSound.Volume or originalVolume
+            activeSound.Volume = 0
+        else
+            activeSound.Volume = originalVolume
+        end
+    end
+end)
+
+-- 4. Tombol Close
+closeBtn.MouseButton1Click:Connect(function()
+    if isMutedLocally and activeSound then
+        activeSound.Volume = originalVolume
+    end
+    gui:Destroy()
+end)
+
+-- 5. Sinkronisasi & Kecepatan Tanpa Batas 2x
 local function updateSyncText()
     local modeTag = isAutoRatioActive and " (Auto)" or ""
     syncInfo.Text = string.format("Kecepatan: %.2fx%s   •   Offset: %+.2fs", lyricSpeed, modeTag, syncOffset)
     speedBtn.Text = string.format("%.2fx", lyricSpeed)
+    speedBtn.TextColor3 = isAutoRatioActive and Color3.fromRGB(30, 230, 135) or Color3.fromRGB(245, 245, 245)
 end
 
--- Fungsi Auto-Sync Durasi Lagu (Seperti Koplingtify / Hawk909)
 local function applyDurationAutoSync()
     if manualSpeedOverride or not activeItem then return false end
     local origDur = tonumber(activeItem.Duration) or 0
@@ -328,7 +568,6 @@ local function applyDurationAutoSync()
     return false
 end
 
--- Tombol kecepatan tanpa batas maksimal 2x speed
 makeHoldable(slowerBtn, function()
     manualSpeedOverride = true
     isAutoRatioActive = false
@@ -339,7 +578,7 @@ end)
 makeHoldable(fasterBtn, function()
     manualSpeedOverride = true
     isAutoRatioActive = false
-    lyricSpeed = math.floor((lyricSpeed + 0.05) * 100 + 0.5) / 100 -- Tanpa math.min(2.00)
+    lyricSpeed = math.floor((lyricSpeed + 0.05) * 100 + 0.5) / 100 -- Tanpa batas maksimal 2.00x
     updateSyncText()
 end)
 
@@ -372,21 +611,32 @@ resetSyncBtn.MouseButton1Click:Connect(function()
 end)
 updateSyncText()
 
-local chatBtn = makeButton(main, "Kirim lirik ke chat: OFF", UDim2.new(0, 12, 1, -31), UDim2.new(1, -24, 0, 24))
 chatBtn.MouseButton1Click:Connect(function()
     autoChat = not autoChat
     lastSentLine = ""
-    chatBtn.Text = "Kirim lirik ke chat: " .. (autoChat and "ON" or "OFF")
-    chatBtn.BackgroundColor3 = autoChat and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(39, 45, 51)
+    chatBtn.Text = "💬 Auto-Chat: " .. (autoChat and "ON" or "OFF")
+    chatBtn.BackgroundColor3 = autoChat and Color3.fromRGB(30, 150, 90) or Color3.fromRGB(36, 41, 49)
 end)
+
+-- ======================== PENCARIAN & HASIL ========================
+
+local resultButtons = {}
 
 local function clearResults()
     for _, child in ipairs(resultsFrame:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
+    resultButtons = {}
 end
 
-local function activateResult(item)
+local function updateDisplayedLyric(prevTxt, currTxt, nextTxt)
+    prevLine.Text = prevTxt or ""
+    currentLine.Text = currTxt or ""
+    nextLine.Text = nextTxt or ""
+    miniLyricText.Text = currTxt or ""
+end
+
+local function activateResult(item, selectedBtn)
     activeItem = item
     lyrics = item.Lyrics or {}
     currentIndex = 0
@@ -394,44 +644,49 @@ local function activateResult(item)
     autoSpeedSynced = false
     isAutoRatioActive = false
 
+    for _, btn in ipairs(resultButtons) do
+        btn.BackgroundColor3 = (btn == selectedBtn) and Color3.fromRGB(30, 135, 80) or Color3.fromRGB(34, 39, 48)
+    end
+
     if not manualSpeedOverride then
         lyricSpeed = 1.00
         applyDurationAutoSync()
     end
     updateSyncText()
 
-    status.Text = item.Title .. " — " .. item.Artist
-    prevLine.Text, nextLine.Text = "", ""
-    currentLine.Text = #lyrics > 0 and "Lirik siap. Menunggu sinkronisasi..." or "Lirik kosong."
+    setStatus(item.Title .. " — " .. item.Artist)
+    updateDisplayedLyric("", #lyrics > 0 and "♪ Lirik siap, menunggu sinkronisasi..." or "Lirik kosong.", "")
 end
 
 local function showResults(items)
     clearResults()
     if #items == 0 then
-        status.Text = "Lirik tersinkronisasi tidak ditemukan."
-        currentLine.Text = "Lirik tidak tersedia."
+        setStatus("Lirik tersinkronisasi tidak ditemukan.")
+        updateDisplayedLyric("", "Lirik tidak tersedia.", "")
         return
     end
     for i, item in ipairs(items) do
-        local durText = item.Duration > 0 and string.format(" [%d:%02d]", math.floor(item.Duration / 60), math.floor(item.Duration % 60)) or ""
-        local b = makeButton(resultsFrame, item.Title .. " — " .. item.Artist .. durText, UDim2.new(), UDim2.new(1, -6, 0, 25))
+        local durText = item.Duration > 0 and string.format(" (%d:%02d)", math.floor(item.Duration / 60), math.floor(item.Duration % 60)) or ""
+        local b = makeButton(resultsFrame, "  " .. item.Title .. " — " .. item.Artist .. durText, UDim2.new(), UDim2.new(1, -4, 0, 30), Color3.fromRGB(34, 39, 48))
         b.LayoutOrder = i
         b.TextXAlignment = Enum.TextXAlignment.Left
         b.TextTruncate = Enum.TextTruncate.AtEnd
-        b.MouseButton1Click:Connect(function() activateResult(item) end)
+        table.insert(resultButtons, b)
+        b.MouseButton1Click:Connect(function()
+            activateResult(item, b)
+        end)
     end
     task.defer(function()
-        resultsFrame.CanvasSize = UDim2.new(0, 0, 0, resultLayout.AbsoluteContentSize.Y + 4)
+        resultsFrame.CanvasSize = UDim2.new(0, 0, 0, resultLayout.AbsoluteContentSize.Y + 8)
     end)
-    activateResult(items[1])
+    activateResult(items[1], resultButtons[1])
 end
 
--- Pencarian Manual & Multi-Query Otomatis
 local searchId = 0
 local function doSearch(query, fallbackQueries)
     searchId += 1
     local thisSearch = searchId
-    status.Text = "Mencari lirik..."
+    setStatus("Mencari lirik...")
     clearResults()
 
     task.spawn(function()
@@ -477,28 +732,8 @@ searchBox.FocusLost:Connect(function(enterPressed)
     end
 end)
 
--- Drag support untuk mouse dan touch
-local dragging, dragStart, startPosition
-main.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPosition = main.Position
-    end
-end)
-main.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        main.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X, startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
-    end
-end)
+-- ======================== DETEKSI LAGU OTOMATIS ========================
 
--- Membaca MusicGUI dalam game jika tersedia
 local function getInGameMusicGuiTitle()
     local guiTitle, guiArtist = "", ""
     pcall(function()
@@ -519,7 +754,6 @@ local function getInGameMusicGuiTitle()
     return guiTitle, guiArtist
 end
 
--- Deteksi lagu aktif otomatis (Memantau pergantian instance Sound maupun pergantian SoundId)
 task.spawn(function()
     while gui.Parent do
         local sound = findSound()
@@ -528,10 +762,12 @@ task.spawn(function()
         if sound and (sound ~= activeSound or currentId ~= activeSoundId) then
             activeSound = sound
             activeSoundId = currentId
+            if not isMutedLocally then
+                originalVolume = sound.Volume > 0 and sound.Volume or 0.5
+            end
             scanToken += 1
             local thisToken = scanToken
 
-            -- Reset state untuk lagu baru
             activeItem = nil
             lyrics = {}
             currentIndex = 0
@@ -543,12 +779,11 @@ task.spawn(function()
             syncOffset = 0.00
             updateSyncText()
 
-            currentLine.Text = "Mendeteksi lagu..."
-            prevLine.Text, nextLine.Text = "", ""
-            status.Text = "Membaca metadata audio..."
+            updateDisplayedLyric("", "Mendeteksi lagu...", "")
+            setStatus("Membaca metadata audio...")
 
             task.spawn(function()
-                task.wait(0.5) -- Beri waktu singkat agar GUI game / TimeLength termuat
+                task.wait(0.5)
                 if scanToken ~= thisToken or not sound or not sound.Parent then return end
 
                 local guiTitle, guiArtist = getInGameMusicGuiTitle()
@@ -588,24 +823,28 @@ task.spawn(function()
                     })
                 else
                     searchBox.Text = ""
-                    status.Text = "Audio terdeteksi (ID: " .. tostring(assetId or "Custom") .. "). Cari manual."
-                    currentLine.Text = "Judul lagu tidak terdeteksi."
+                    setStatus("Audio ID: " .. tostring(assetId or "Custom") .. " (Cari manual)")
+                    updateDisplayedLyric("", "Judul lagu tidak terdeteksi.", "")
                 end
             end)
         elseif not sound and activeSound then
             activeSound = nil
             activeSoundId = nil
-            status.Text = "Tidak ada musik yang sedang diputar."
+            setStatus("Menunggu musik diputar...")
         end
         task.wait(0.8)
     end
 end)
 
--- Karaoke mengikuti TimePosition audio aktif & Auto-Sync Durasi real-time
+-- ======================== SINKRONISASI REAL-TIME ========================
+
 RunService.Heartbeat:Connect(function()
     if not gui.Parent or not activeSound or not activeSound.IsPlaying then return end
 
-    -- Jika TimeLength baru selesai dimuat oleh Roblox setelah lirik terpilih, langsung sinkronkan otomatis
+    if isMutedLocally then
+        activeSound.Volume = 0
+    end
+
     if activeItem and not autoSpeedSynced and not manualSpeedOverride and activeSound.TimeLength > 5 then
         applyDurationAutoSync()
     end
@@ -627,15 +866,16 @@ RunService.Heartbeat:Connect(function()
         local line = lyrics[found]
         local text = line.Text
 
-        -- Lewati baris kosong untuk tampilan Previous dan Next seperti di Koplingtify utama
         local p = 1
         while lyrics[found - p] and lyrics[found - p].Text == "" do p += 1 end
         local n = 1
         while lyrics[found + n] and lyrics[found + n].Text == "" do n += 1 end
 
-        prevLine.Text = lyrics[found - p] and lyrics[found - p].Text or ""
-        currentLine.Text = text ~= "" and text or "♪"
-        nextLine.Text = lyrics[found + n] and lyrics[found + n].Text or ""
+        local prevTxt = lyrics[found - p] and lyrics[found - p].Text or ""
+        local currTxt = text ~= "" and text or "♪"
+        local nextTxt = lyrics[found + n] and lyrics[found + n].Text or ""
+
+        updateDisplayedLyric(prevTxt, currTxt, nextTxt)
 
         if autoChat and text ~= "" and text ~= lastSentLine then
             lastSentLine = text
@@ -644,4 +884,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("Koplingtify Lite (Auto-Sync & Unlimited Speed) loaded.")
+print("Koplingtify Lite (Android UI & Minimize Edition) loaded.")
