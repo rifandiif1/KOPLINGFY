@@ -1,5 +1,6 @@
--- KOPLINGTIFY LITE (ANDROID & MINIMIZE EDITION)
+-- KOPLINGTIFY LITE (ANDROID + SUBTITLE HUD + PROGRESS BAR)
 -- Fitur: UI ramah layar sentuh Android, Mode Compact (Minimize), Mode Floating Icon,
+-- Subtitle Mengambang Transparan (HUD), Progress Bar Durasi Lagu,
 -- Auto-Sync durasi lagu, tanpa batas max speed 2x, Mute lokal, & Auto-Search pergantian lagu.
 
 local Players = game:GetService("Players")
@@ -27,16 +28,17 @@ local autoSpeedSynced = false
 local isAutoRatioActive = false
 local autoChat = false
 local isMutedLocally = false
+local isSubtitleEnabled = false
 local originalVolume = 0.5
 local lastSentLine = ""
 local scanToken = 0
 local isMinimized = false
 
-local FULL_SIZE = UDim2.new(0, 350, 0, 400)
+local FULL_SIZE = UDim2.new(0, 350, 0, 428)
 local MINI_SIZE = UDim2.new(0, 350, 0, 96)
 
 local function safeCall(fn, ...)
-    local ok, result = pcall(fn, ...)
+    local ok, result = pcall(function() return fn(...) end)
     if ok then return result end
     return nil
 end
@@ -47,6 +49,11 @@ local function httpGet(url)
     end)
     if ok and type(result) == "string" then return result end
     return nil
+end
+
+local function formatTime(seconds)
+    seconds = math.max(0, math.floor(tonumber(seconds) or 0))
+    return string.format("%02d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
 local function cleanSongName(name)
@@ -71,7 +78,7 @@ local function getAggressiveName(name)
     if not splitStr then return "" end
     n = string.split(splitStr, "|")[1]
     n = string.split(splitStr, "(")[1]
-    n = string.split(n, "[")[1]
+    n = string.split(splitStr, "[")[1]
     return n:match("^%s*(.-)%s*$") or ""
 end
 
@@ -161,7 +168,7 @@ local function findSound()
     local roots = {workspace, game:GetService("SoundService"), player}
     for _, root in ipairs(roots) do
         for _, obj in ipairs(root:GetDescendants()) do
-            if obj:IsA("Sound") and obj.IsPlaying and obj.SoundId ~= "" and (obj.Volume > 0 or ( isMutedLocally and obj == activeSound )) then
+            if obj:IsA("Sound") and obj.IsPlaying and obj.SoundId ~= "" and (obj.Volume > 0 or (isMutedLocally and obj == activeSound)) then
                 if obj.TimeLength == 0 or obj.TimeLength > 15 then
                     local vol = (obj == activeSound and isMutedLocally) and originalVolume or obj.Volume
                     if vol > bestVolume then
@@ -191,7 +198,7 @@ local main = Instance.new("Frame")
 main.Name = "Main"
 main.Size = FULL_SIZE
 main.AnchorPoint = Vector2.new(0.5, 0)
-main.Position = UDim2.new(0.5, 0, 0.08, 0)
+main.Position = UDim2.new(0.5, 0, 0.07, 0)
 main.BackgroundColor3 = Color3.fromRGB(18, 20, 25)
 main.BackgroundTransparency = 0.04
 main.BorderSizePixel = 0
@@ -205,14 +212,14 @@ mainStroke.Color = Color3.fromRGB(30, 215, 115)
 mainStroke.Thickness = 1.5
 mainStroke.Transparency = 0.25
 
--- Skala otomatis agar pas di layar HP kecil maupun tablet
+-- Skala otomatis untuk layar HP
 local uiScale = Instance.new("UIScale", main)
 local function updateScreenScale()
     local cam = workspace.CurrentCamera
     if cam then
         local minDim = math.min(cam.ViewportSize.X, cam.ViewportSize.Y)
-        if minDim < 420 then
-            uiScale.Scale = math.clamp(minDim / 430, 0.78, 1)
+        if minDim < 440 then
+            uiScale.Scale = math.clamp(minDim / 450, 0.75, 1)
         else
             uiScale.Scale = 1
         end
@@ -240,6 +247,45 @@ Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(1, 0)
 local floatStroke = Instance.new("UIStroke", floatBtn)
 floatStroke.Color = Color3.fromRGB(30, 215, 115)
 floatStroke.Thickness = 2
+
+-- ======================== SUBTITLE HUD OVERLAY (TRANSPARAN) ========================
+local subtitleFrame = Instance.new("Frame")
+subtitleFrame.Name = "SubtitleOverlay"
+subtitleFrame.Size = UDim2.new(0.85, 0, 0, 68)
+subtitleFrame.AnchorPoint = Vector2.new(0.5, 1)
+subtitleFrame.Position = UDim2.new(0.5, 0, 0.92, 0)
+subtitleFrame.BackgroundTransparency = 1
+subtitleFrame.Visible = false
+subtitleFrame.Active = true
+subtitleFrame.Parent = gui
+
+local subMainText = Instance.new("TextLabel")
+subMainText.Name = "SubCurrent"
+subMainText.Size = UDim2.new(1, 0, 0, 38)
+subMainText.Position = UDim2.new(0, 0, 0, 0)
+subMainText.BackgroundTransparency = 1
+subMainText.Font = Enum.Font.GothamBold
+subMainText.TextSize = 20
+subMainText.TextColor3 = Color3.fromRGB(255, 255, 255)
+subMainText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+subMainText.TextStrokeTransparency = 0.1
+subMainText.TextWrapped = true
+subMainText.Text = "Menunggu lagu..."
+subMainText.Parent = subtitleFrame
+
+local subNextText = Instance.new("TextLabel")
+subNextText.Name = "SubNext"
+subNextText.Size = UDim2.new(1, 0, 0, 24)
+subNextText.Position = UDim2.new(0, 0, 0, 40)
+subNextText.BackgroundTransparency = 1
+subNextText.Font = Enum.Font.GothamSemibold
+subNextText.TextSize = 14
+subNextText.TextColor3 = Color3.fromRGB(185, 195, 205)
+subNextText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+subNextText.TextStrokeTransparency = 0.25
+subNextText.TextWrapped = true
+subNextText.Text = ""
+subNextText.Parent = subtitleFrame
 
 local function makeLabel(parent, name, pos, size, text, fontSize, color)
     local obj = Instance.new("TextLabel")
@@ -294,7 +340,7 @@ local function makeHoldable(btn, callback)
     end)
 end
 
--- Fungsi Dragging Khusus Android & Mouse (Tanpa Mengganggu Scroll)
+-- Fungsi Dragging Khusus Android & Mouse
 local function enableDrag(dragHandle, targetFrame)
     local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
     dragHandle.InputBegan:Connect(function(input)
@@ -335,23 +381,25 @@ topBar.Active = true
 topBar.Parent = main
 Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 14)
 
-local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 14, 0, 4), UDim2.new(1, -160, 0, 20), "KOPLINGTIFY LITE", 13, Color3.fromRGB(30, 230, 135))
+local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 12, 0, 4), UDim2.new(1, -190, 0, 20), "KOPLINGTIFY LITE", 13, Color3.fromRGB(30, 230, 135))
 titleHeader.Font = Enum.Font.GothamBold
 titleHeader.TextXAlignment = Enum.TextXAlignment.Left
 
-local subHeader = makeLabel(topBar, "SubHeader", UDim2.new(0, 14, 0, 21), UDim2.new(1, -160, 0, 16), "Geser bar ini untuk memindahkan", 10, Color3.fromRGB(150, 158, 170))
+local subHeader = makeLabel(topBar, "SubHeader", UDim2.new(0, 12, 0, 21), UDim2.new(1, -190, 0, 16), "Geser bar ini untuk memindahkan", 10, Color3.fromRGB(150, 158, 170))
 subHeader.TextXAlignment = Enum.TextXAlignment.Left
 subHeader.TextTruncate = Enum.TextTruncate.AtEnd
 
--- Tombol Kontrol Header (Ukuran 32x30 agar nyaman disentuh di HP)
-local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -144, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
-local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -108, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
-local minBtn = makeButton(topBar, "—", UDim2.new(1, -72, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
-local closeBtn = makeButton(topBar, "×", UDim2.new(1, -36, 0, 6), UDim2.new(0, 28, 0, 30), Color3.fromRGB(135, 45, 52))
+-- Tombol Kontrol Header (Termasuk Tombol Subtitle 📺)
+local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -178, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
+local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -142, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
+local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -106, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
+local minBtn = makeButton(topBar, "—", UDim2.new(1, -70, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
+local closeBtn = makeButton(topBar, "×", UDim2.new(1, -34, 0, 6), UDim2.new(0, 26, 0, 30), Color3.fromRGB(135, 45, 52))
 closeBtn.TextSize = 16
 
 enableDrag(topBar, main)
 enableDrag(floatBtn, floatBtn)
+enableDrag(subtitleFrame, subtitleFrame)
 
 -- ======================== MINI LYRIC BAR (Tampil Saat Minimize) ========================
 local miniBar = Instance.new("Frame")
@@ -364,10 +412,26 @@ miniBar.Visible = false
 miniBar.Parent = main
 Instance.new("UICorner", miniBar).CornerRadius = UDim.new(0, 9)
 
-local miniLyricText = makeLabel(miniBar, "MiniLyric", UDim2.new(0, 10, 0, 2), UDim2.new(1, -20, 1, -4), "Menunggu lagu...", 14, Color3.fromRGB(255, 255, 255))
+local miniLyricText = makeLabel(miniBar, "MiniLyric", UDim2.new(0, 10, 0, 2), UDim2.new(1, -20, 0, 34), "Menunggu lagu...", 13, Color3.fromRGB(255, 255, 255))
 miniLyricText.Font = Enum.Font.GothamBold
 
--- ======================== BODY CONTAINER (Disembunyikan Saat Minimize) ========================
+-- Mini Progress Bar saat mode Compact / Minimize
+local miniProgBg = Instance.new("Frame")
+miniProgBg.Position = UDim2.new(0, 8, 1, -6)
+miniProgBg.Size = UDim2.new(1, -16, 0, 3)
+miniProgBg.BackgroundColor3 = Color3.fromRGB(45, 52, 65)
+miniProgBg.BorderSizePixel = 0
+miniProgBg.Parent = miniBar
+Instance.new("UICorner", miniProgBg).CornerRadius = UDim.new(1, 0)
+
+local miniProgFill = Instance.new("Frame")
+miniProgFill.Size = UDim2.new(0, 0, 1, 0)
+miniProgFill.BackgroundColor3 = Color3.fromRGB(30, 215, 115)
+miniProgFill.BorderSizePixel = 0
+miniProgFill.Parent = miniProgBg
+Instance.new("UICorner", miniProgFill).CornerRadius = UDim.new(1, 0)
+
+-- ======================== BODY CONTAINER ========================
 local body = Instance.new("Frame")
 body.Name = "Body"
 body.Position = UDim2.new(0, 0, 0, 44)
@@ -407,7 +471,7 @@ end)
 
 local searchBtn = makeButton(body, "CARI", UDim2.new(1, -64, 0, 4), UDim2.new(0, 52, 0, 36), Color3.fromRGB(30, 165, 95))
 
--- Daftar Hasil Pencarian (Tombol diperbesar untuk layar sentuh)
+-- Daftar Hasil Pencarian
 local resultsFrame = Instance.new("ScrollingFrame")
 resultsFrame.Position = UDim2.new(0, 12, 0, 46)
 resultsFrame.Size = UDim2.new(1, -24, 0, 68)
@@ -429,11 +493,11 @@ resultPad.PaddingBottom = UDim.new(0, 4)
 resultPad.PaddingLeft = UDim.new(0, 4)
 resultPad.PaddingRight = UDim.new(0, 4)
 
--- Panel Lirik Karaoke (Dapat diketuk untuk kirim manual / copy)
+-- Panel Lirik Karaoke
 local lyricCard = Instance.new("TextButton")
 lyricCard.Name = "LyricCard"
 lyricCard.Position = UDim2.new(0, 12, 0, 120)
-lyricCard.Size = UDim2.new(1, -24, 0, 102)
+lyricCard.Size = UDim2.new(1, -24, 0, 100)
 lyricCard.BackgroundColor3 = Color3.fromRGB(24, 28, 35)
 lyricCard.BorderSizePixel = 0
 lyricCard.Text = ""
@@ -444,12 +508,11 @@ local cardStroke = Instance.new("UIStroke", lyricCard)
 cardStroke.Color = Color3.fromRGB(45, 52, 65)
 cardStroke.Thickness = 1
 
-local prevLine = makeLabel(lyricCard, "Previous", UDim2.new(0, 10, 0, 6), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 138, 150))
-local currentLine = makeLabel(lyricCard, "Current", UDim2.new(0, 10, 0, 27), UDim2.new(1, -20, 0, 46), "Menunggu lagu...", 16, Color3.fromRGB(255, 255, 255))
+local prevLine = makeLabel(lyricCard, "Previous", UDim2.new(0, 10, 0, 5), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 138, 150))
+local currentLine = makeLabel(lyricCard, "Current", UDim2.new(0, 10, 0, 26), UDim2.new(1, -20, 0, 46), "Menunggu lagu...", 16, Color3.fromRGB(255, 255, 255))
 currentLine.Font = Enum.Font.GothamBold
-local nextLine = makeLabel(lyricCard, "Next", UDim2.new(0, 10, 0, 75), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 138, 150))
+local nextLine = makeLabel(lyricCard, "Next", UDim2.new(0, 10, 0, 74), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 138, 150))
 
--- Ketuk kotak lirik untuk langsung mengirim baris saat ini ke chat
 lyricCard.MouseButton1Click:Connect(function()
     local txt = currentLine.Text
     if txt ~= "" and txt ~= "Menunggu lagu..." and txt ~= "Mendeteksi lagu..." and txt ~= "Lirik tidak tersedia." and txt ~= "♪" then
@@ -461,31 +524,64 @@ lyricCard.MouseButton1Click:Connect(function()
     end
 end)
 
+-- ======================== PROGRESS BAR LAGU & WAKTU REAL-TIME ========================
+local timeCurrentLbl = makeLabel(body, "TimeCurrent", UDim2.new(0, 12, 0, 225), UDim2.new(0, 45, 0, 18), "00:00", 10, Color3.fromRGB(165, 175, 185))
+timeCurrentLbl.Font = Enum.Font.GothamSemibold
+timeCurrentLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local progBarBg = Instance.new("Frame")
+progBarBg.Name = "ProgressBarBg"
+progBarBg.Position = UDim2.new(0, 56, 0, 231)
+progBarBg.Size = UDim2.new(1, -112, 0, 6)
+progBarBg.BackgroundColor3 = Color3.fromRGB(36, 42, 52)
+progBarBg.BorderSizePixel = 0
+progBarBg.Parent = body
+Instance.new("UICorner", progBarBg).CornerRadius = UDim.new(1, 0)
+
+local progBarFill = Instance.new("Frame")
+progBarFill.Name = "Fill"
+progBarFill.Size = UDim2.new(0, 0, 1, 0)
+progBarFill.BackgroundColor3 = Color3.fromRGB(30, 215, 115)
+progBarFill.BorderSizePixel = 0
+progBarFill.Parent = progBarBg
+Instance.new("UICorner", progBarFill).CornerRadius = UDim.new(1, 0)
+
+local timeTotalLbl = makeLabel(body, "TimeTotal", UDim2.new(1, -57, 0, 225), UDim2.new(0, 45, 0, 18), "00:00", 10, Color3.fromRGB(165, 175, 185))
+timeTotalLbl.Font = Enum.Font.GothamSemibold
+timeTotalLbl.TextXAlignment = Enum.TextXAlignment.Right
+
 -- Informasi Sinkronisasi
-local syncInfo = makeLabel(body, "SyncInfo", UDim2.new(0, 12, 0, 226), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(30, 230, 135))
+local syncInfo = makeLabel(body, "SyncInfo", UDim2.new(0, 12, 0, 248), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(30, 230, 135))
 syncInfo.Font = Enum.Font.GothamSemibold
 
--- Kontrol Kecepatan & Offset (Tinggi 34px agar mudah ditekan di layar sentuh)
-local slowerBtn = makeButton(body, "−", UDim2.new(0, 12, 0, 248), UDim2.new(0, 42, 0, 34))
+-- Kontrol Kecepatan & Offset
+local slowerBtn = makeButton(body, "−", UDim2.new(0, 12, 0, 272), UDim2.new(0, 42, 0, 34))
 slowerBtn.TextSize = 16
-local speedBtn = makeButton(body, "1.00x", UDim2.new(0, 58, 0, 248), UDim2.new(0, 68, 0, 34))
-local fasterBtn = makeButton(body, "+", UDim2.new(0, 130, 0, 248), UDim2.new(0, 42, 0, 34))
+local speedBtn = makeButton(body, "1.00x", UDim2.new(0, 58, 0, 272), UDim2.new(0, 68, 0, 34))
+local fasterBtn = makeButton(body, "+", UDim2.new(0, 130, 0, 272), UDim2.new(0, 42, 0, 34))
 fasterBtn.TextSize = 16
 
-local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 180, 0, 248), UDim2.new(0, 76, 0, 34))
-local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 262, 0, 248), UDim2.new(0, 76, 0, 34))
+local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 180, 0, 272), UDim2.new(0, 76, 0, 34))
+local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 262, 0, 272), UDim2.new(0, 76, 0, 34))
 
 -- Baris Bawah: Reset Auto-Sync & Toggle Auto-Chat
-local resetSyncBtn = makeButton(body, "🔄 AUTO SYNC", UDim2.new(0, 12, 0, 290), UDim2.new(0, 156, 0, 34), Color3.fromRGB(48, 58, 70))
-local chatBtn = makeButton(body, "💬 Auto-Chat: OFF", UDim2.new(0, 174, 0, 290), UDim2.new(0, 164, 0, 34), Color3.fromRGB(36, 41, 49))
+local resetSyncBtn = makeButton(body, "🔄 AUTO SYNC", UDim2.new(0, 12, 0, 314), UDim2.new(0, 156, 0, 34), Color3.fromRGB(48, 58, 70))
+local chatBtn = makeButton(body, "💬 Auto-Chat: OFF", UDim2.new(0, 174, 0, 314), UDim2.new(0, 164, 0, 34), Color3.fromRGB(36, 41, 49))
 
-local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 330), UDim2.new(1, -24, 0, 18), "Tips: Ketuk kotak lirik untuk kirim manual ke chat.", 10, Color3.fromRGB(120, 128, 140))
+local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 354), UDim2.new(1, -24, 0, 18), "Tips: Ketuk 📺 di atas untuk Subtitle transparan di layar.", 10, Color3.fromRGB(120, 128, 140))
 
 -- ======================== LOGIKA TOMBOL & MINIMIZE ========================
 
 local function setStatus(text)
     subHeader.Text = text
 end
+
+-- 0. Tombol Subtitle HUD Mengambang (📺)
+subToggleBtn.MouseButton1Click:Connect(function()
+    isSubtitleEnabled = not isSubtitleEnabled
+    subtitleFrame.Visible = isSubtitleEnabled
+    subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(30, 150, 90) or Color3.fromRGB(38, 44, 54)
+end)
 
 -- 1. Tombol Minimize (Mode Compact vs Mode Penuh)
 minBtn.MouseButton1Click:Connect(function()
@@ -578,7 +674,7 @@ end)
 makeHoldable(fasterBtn, function()
     manualSpeedOverride = true
     isAutoRatioActive = false
-    lyricSpeed = math.floor((lyricSpeed + 0.05) * 100 + 0.5) / 100 -- Tanpa batas maksimal 2.00x
+    lyricSpeed = math.floor((lyricSpeed + 0.05) * 100 + 0.5) / 100
     updateSyncText()
 end)
 
@@ -634,6 +730,8 @@ local function updateDisplayedLyric(prevTxt, currTxt, nextTxt)
     currentLine.Text = currTxt or ""
     nextLine.Text = nextTxt or ""
     miniLyricText.Text = currTxt or ""
+    subMainText.Text = currTxt or ""
+    subNextText.Text = nextTxt or ""
 end
 
 local function activateResult(item, selectedBtn)
@@ -779,6 +877,11 @@ task.spawn(function()
             syncOffset = 0.00
             updateSyncText()
 
+            progBarFill.Size = UDim2.new(0, 0, 1, 0)
+            miniProgFill.Size = UDim2.new(0, 0, 1, 0)
+            timeCurrentLbl.Text = "00:00"
+            timeTotalLbl.Text = "00:00"
+
             updateDisplayedLyric("", "Mendeteksi lagu...", "")
             setStatus("Membaca metadata audio...")
 
@@ -831,12 +934,16 @@ task.spawn(function()
             activeSound = nil
             activeSoundId = nil
             setStatus("Menunggu musik diputar...")
+            progBarFill.Size = UDim2.new(0, 0, 1, 0)
+            miniProgFill.Size = UDim2.new(0, 0, 1, 0)
+            timeCurrentLbl.Text = "00:00"
+            timeTotalLbl.Text = "00:00"
         end
         task.wait(0.8)
     end
 end)
 
--- ======================== SINKRONISASI REAL-TIME ========================
+-- ======================== SINKRONISASI & PROGRESS BAR REAL-TIME ========================
 
 RunService.Heartbeat:Connect(function()
     if not gui.Parent or not activeSound or not activeSound.IsPlaying then return end
@@ -845,13 +952,28 @@ RunService.Heartbeat:Connect(function()
         activeSound.Volume = 0
     end
 
+    -- Update Progress Bar & Waktu Lagu Real-Time
+    local curTime = activeSound.TimePosition or 0
+    local totTime = activeSound.TimeLength or 0
+    if totTime <= 0 and activeItem and activeItem.Duration > 0 then
+        totTime = activeItem.Duration
+    end
+
+    timeCurrentLbl.Text = formatTime(curTime)
+    timeTotalLbl.Text = formatTime(totTime)
+
+    local progressRatio = totTime > 0 and math.clamp(curTime / totTime, 0, 1) or 0
+    progBarFill.Size = UDim2.new(progressRatio, 0, 1, 0)
+    miniProgFill.Size = UDim2.new(progressRatio, 0, 1, 0)
+
+    -- Auto-Sync Durasi begitu TimeLength tersedia
     if activeItem and not autoSpeedSynced and not manualSpeedOverride and activeSound.TimeLength > 5 then
         applyDurationAutoSync()
     end
 
     if #lyrics == 0 then return end
 
-    local position = (activeSound.TimePosition * lyricSpeed) + syncOffset
+    local position = (curTime * lyricSpeed) + syncOffset
     local found = 0
     for i, line in ipairs(lyrics) do
         if position >= line.Time then
@@ -884,4 +1006,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("Koplingtify Lite (Android UI & Minimize Edition) loaded.")
+print("Koplingtify Lite (Subtitle HUD + Progress Bar Edition) loaded.")
