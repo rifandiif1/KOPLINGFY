@@ -1,7 +1,6 @@
--- KOPLINGTIFY LITE (ANDROID + SUBTITLE HUD + PROGRESS BAR)
--- Fitur: UI ramah layar sentuh Android, Mode Compact (Minimize), Mode Floating Icon,
--- Subtitle Mengambang Transparan (HUD), Progress Bar Durasi Lagu,
--- Auto-Sync durasi lagu, tanpa batas max speed 2x, Mute lokal, & Auto-Search pergantian lagu.
+-- KOPLINGTIFY LITE (FIXED - PASTI MUNCUL SAAT EXECUTE)
+-- Fitur: Auto-Sync durasi lagu, tanpa batas max speed 2x, Auto-Search pergantian lagu,
+-- UI Android ramah sentuh, Minimize, Floating Icon, Subtitle Transparan (HUD), & Progress Bar.
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -11,9 +10,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
 
+-- Tunggu LocalPlayer siap jika dieksekusi di autoexec
 local player = Players.LocalPlayer
-if not player then return end
+if not player then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    player = Players.LocalPlayer
+end
 
 -- State & Variabel Utama
 local cache = {}
@@ -34,11 +38,11 @@ local lastSentLine = ""
 local scanToken = 0
 local isMinimized = false
 
-local FULL_SIZE = UDim2.new(0, 350, 0, 428)
-local MINI_SIZE = UDim2.new(0, 350, 0, 96)
+local FULL_SIZE = UDim2.new(0, 340, 0, 415)
+local MINI_SIZE = UDim2.new(0, 340, 0, 94)
 
 local function safeCall(fn, ...)
-    local ok, result = pcall(function() return fn(...) end)
+    local ok, result = pcall(fn, ...)
     if ok then return result end
     return nil
 end
@@ -77,8 +81,8 @@ local function getAggressiveName(name)
     local splitStr = string.split(n, "-")[1]
     if not splitStr then return "" end
     n = string.split(splitStr, "|")[1]
-    n = string.split(splitStr, "(")[1]
-    n = string.split(splitStr, "[")[1]
+    n = string.split(n, "(")[1]
+    n = string.split(n, "[")[1]
     return n:match("^%s*(.-)%s*$") or ""
 end
 
@@ -181,60 +185,60 @@ local function findSound()
     return best
 end
 
--- ======================== UI SETUP ========================
-local guiParent = player:WaitForChild("PlayerGui")
-local old = guiParent:FindFirstChild("KoplingtifyLite")
-if old then old:Destroy() end
+-- ======================== SAFE GUI PARENT (FIX TIDAK MUNCUL) ========================
+local function getSafeParent()
+    local okGethui, hui = pcall(function()
+        return gethui and gethui()
+    end)
+    if okGethui and hui then return hui end
+
+    local okCore, core = pcall(function()
+        return game:GetService("CoreGui")
+    end)
+    if okCore and core then return core end
+
+    return player:WaitForChild("PlayerGui")
+end
+
+-- Bersihkan UI lama di semua kemungkinan tempat
+pcall(function()
+    if gethui and gethui():FindFirstChild("KoplingtifyLite") then gethui().KoplingtifyLite:Destroy() end
+end)
+pcall(function()
+    if game:GetService("CoreGui"):FindFirstChild("KoplingtifyLite") then game:GetService("CoreGui").KoplingtifyLite:Destroy() end
+end)
+pcall(function()
+    local pg = player:FindFirstChild("PlayerGui")
+    if pg and pg:FindFirstChild("KoplingtifyLite") then pg.KoplingtifyLite:Destroy() end
+end)
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "KoplingtifyLite"
 gui.ResetOnSpawn = false
-gui.DisplayOrder = 100
-gui.IgnoreGuiInset = true
-gui.Parent = guiParent
+gui.DisplayOrder = 9999
+gui.Parent = getSafeParent()
 
--- Frame Utama
+-- Frame Utama (Menggunakan posisi eksplisit seperti skrip awal agar pasti terlihat)
 local main = Instance.new("Frame")
 main.Name = "Main"
 main.Size = FULL_SIZE
-main.AnchorPoint = Vector2.new(0.5, 0)
-main.Position = UDim2.new(0.5, 0, 0.07, 0)
-main.BackgroundColor3 = Color3.fromRGB(18, 20, 25)
-main.BackgroundTransparency = 0.04
+main.Position = UDim2.new(0.5, -170, 0.1, 0)
+main.BackgroundColor3 = Color3.fromRGB(20, 22, 27)
 main.BorderSizePixel = 0
-main.ClipsDescendants = true
 main.Active = true
 main.Parent = gui
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 14)
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
 
 local mainStroke = Instance.new("UIStroke", main)
-mainStroke.Color = Color3.fromRGB(30, 215, 115)
+mainStroke.Color = Color3.fromRGB(30, 215, 125)
 mainStroke.Thickness = 1.5
 mainStroke.Transparency = 0.25
-
--- Skala otomatis untuk layar HP
-local uiScale = Instance.new("UIScale", main)
-local function updateScreenScale()
-    local cam = workspace.CurrentCamera
-    if cam then
-        local minDim = math.min(cam.ViewportSize.X, cam.ViewportSize.Y)
-        if minDim < 440 then
-            uiScale.Scale = math.clamp(minDim / 450, 0.75, 1)
-        else
-            uiScale.Scale = 1
-        end
-    end
-end
-updateScreenScale()
-if workspace.CurrentCamera then
-    workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScreenScale)
-end
 
 -- Tombol Mengambang (Floating Pill saat disembunyikan penuh)
 local floatBtn = Instance.new("TextButton")
 floatBtn.Name = "FloatingToggle"
-floatBtn.Size = UDim2.new(0, 52, 0, 52)
-floatBtn.Position = UDim2.new(0, 16, 0.45, 0)
+floatBtn.Size = UDim2.new(0, 50, 0, 50)
+floatBtn.Position = UDim2.new(0, 20, 0.45, 0)
 floatBtn.BackgroundColor3 = Color3.fromRGB(22, 26, 32)
 floatBtn.TextColor3 = Color3.fromRGB(30, 230, 135)
 floatBtn.Font = Enum.Font.GothamBold
@@ -245,15 +249,14 @@ floatBtn.Active = true
 floatBtn.Parent = gui
 Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(1, 0)
 local floatStroke = Instance.new("UIStroke", floatBtn)
-floatStroke.Color = Color3.fromRGB(30, 215, 115)
+floatStroke.Color = Color3.fromRGB(30, 215, 125)
 floatStroke.Thickness = 2
 
 -- ======================== SUBTITLE HUD OVERLAY (TRANSPARAN) ========================
 local subtitleFrame = Instance.new("Frame")
 subtitleFrame.Name = "SubtitleOverlay"
-subtitleFrame.Size = UDim2.new(0.85, 0, 0, 68)
-subtitleFrame.AnchorPoint = Vector2.new(0.5, 1)
-subtitleFrame.Position = UDim2.new(0.5, 0, 0.92, 0)
+subtitleFrame.Size = UDim2.new(0, 500, 0, 68)
+subtitleFrame.Position = UDim2.new(0.5, -250, 0.82, 0)
 subtitleFrame.BackgroundTransparency = 1
 subtitleFrame.Visible = false
 subtitleFrame.Active = true
@@ -306,14 +309,14 @@ local function makeButton(parent, text, pos, size, bgColor)
     local b = Instance.new("TextButton")
     b.Position = pos
     b.Size = size
-    b.BackgroundColor3 = bgColor or Color3.fromRGB(36, 41, 49)
+    b.BackgroundColor3 = bgColor or Color3.fromRGB(39, 45, 51)
     b.TextColor3 = Color3.fromRGB(245, 245, 245)
     b.Font = Enum.Font.GothamSemibold
     b.TextSize = 12
     b.Text = text
     b.AutoButtonColor = true
     b.Parent = parent
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 7)
     return b
 end
 
@@ -374,28 +377,28 @@ end
 -- ======================== HEADER BAR ========================
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 42)
-topBar.BackgroundColor3 = Color3.fromRGB(25, 29, 36)
+topBar.Size = UDim2.new(1, 0, 0, 40)
+topBar.BackgroundColor3 = Color3.fromRGB(26, 30, 37)
 topBar.BorderSizePixel = 0
 topBar.Active = true
 topBar.Parent = main
-Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 14)
+Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 12)
 
-local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 12, 0, 4), UDim2.new(1, -190, 0, 20), "KOPLINGTIFY LITE", 13, Color3.fromRGB(30, 230, 135))
+local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 12, 0, 3), UDim2.new(1, -185, 0, 18), "KOPLINGTIFY LITE", 13, Color3.fromRGB(30, 230, 135))
 titleHeader.Font = Enum.Font.GothamBold
 titleHeader.TextXAlignment = Enum.TextXAlignment.Left
 
-local subHeader = makeLabel(topBar, "SubHeader", UDim2.new(0, 12, 0, 21), UDim2.new(1, -190, 0, 16), "Geser bar ini untuk memindahkan", 10, Color3.fromRGB(150, 158, 170))
-subHeader.TextXAlignment = Enum.TextXAlignment.Left
-subHeader.TextTruncate = Enum.TextTruncate.AtEnd
+local status = makeLabel(topBar, "Status", UDim2.new(0, 12, 0, 20), UDim2.new(1, -185, 0, 16), "Putar musik atau cari lirik...", 10, Color3.fromRGB(160, 168, 178))
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.TextTruncate = Enum.TextTruncate.AtEnd
 
--- Tombol Kontrol Header (Termasuk Tombol Subtitle 📺)
-local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -178, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
-local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -142, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
-local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -106, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
-local minBtn = makeButton(topBar, "—", UDim2.new(1, -70, 0, 6), UDim2.new(0, 32, 0, 30), Color3.fromRGB(38, 44, 54))
-local closeBtn = makeButton(topBar, "×", UDim2.new(1, -34, 0, 6), UDim2.new(0, 26, 0, 30), Color3.fromRGB(135, 45, 52))
-closeBtn.TextSize = 16
+-- Tombol Kontrol Header (📺 Subtitle, 🔊 Mute, 🎵 Pill, — Minimize, × Close)
+local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -172, 0, 6), UDim2.new(0, 30, 0, 28), Color3.fromRGB(39, 45, 55))
+local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -138, 0, 6), UDim2.new(0, 30, 0, 28), Color3.fromRGB(39, 45, 55))
+local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -104, 0, 6), UDim2.new(0, 30, 0, 28), Color3.fromRGB(39, 45, 55))
+local minBtn = makeButton(topBar, "—", UDim2.new(1, -70, 0, 6), UDim2.new(0, 30, 0, 28), Color3.fromRGB(39, 45, 55))
+local closeBtn = makeButton(topBar, "×", UDim2.new(1, -36, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(130, 42, 48))
+closeBtn.TextSize = 15
 
 enableDrag(topBar, main)
 enableDrag(floatBtn, floatBtn)
@@ -404,18 +407,17 @@ enableDrag(subtitleFrame, subtitleFrame)
 -- ======================== MINI LYRIC BAR (Tampil Saat Minimize) ========================
 local miniBar = Instance.new("Frame")
 miniBar.Name = "MiniBar"
-miniBar.Position = UDim2.new(0, 10, 0, 46)
+miniBar.Position = UDim2.new(0, 10, 0, 44)
 miniBar.Size = UDim2.new(1, -20, 0, 44)
-miniBar.BackgroundColor3 = Color3.fromRGB(26, 30, 38)
+miniBar.BackgroundColor3 = Color3.fromRGB(27, 31, 38)
 miniBar.BorderSizePixel = 0
 miniBar.Visible = false
 miniBar.Parent = main
-Instance.new("UICorner", miniBar).CornerRadius = UDim.new(0, 9)
+Instance.new("UICorner", miniBar).CornerRadius = UDim.new(0, 8)
 
 local miniLyricText = makeLabel(miniBar, "MiniLyric", UDim2.new(0, 10, 0, 2), UDim2.new(1, -20, 0, 34), "Menunggu lagu...", 13, Color3.fromRGB(255, 255, 255))
 miniLyricText.Font = Enum.Font.GothamBold
 
--- Mini Progress Bar saat mode Compact / Minimize
 local miniProgBg = Instance.new("Frame")
 miniProgBg.Position = UDim2.new(0, 8, 1, -6)
 miniProgBg.Size = UDim2.new(1, -16, 0, 3)
@@ -426,7 +428,7 @@ Instance.new("UICorner", miniProgBg).CornerRadius = UDim.new(1, 0)
 
 local miniProgFill = Instance.new("Frame")
 miniProgFill.Size = UDim2.new(0, 0, 1, 0)
-miniProgFill.BackgroundColor3 = Color3.fromRGB(30, 215, 115)
+miniProgFill.BackgroundColor3 = Color3.fromRGB(30, 215, 125)
 miniProgFill.BorderSizePixel = 0
 miniProgFill.Parent = miniProgBg
 Instance.new("UICorner", miniProgFill).CornerRadius = UDim.new(1, 0)
@@ -434,106 +436,81 @@ Instance.new("UICorner", miniProgFill).CornerRadius = UDim.new(1, 0)
 -- ======================== BODY CONTAINER ========================
 local body = Instance.new("Frame")
 body.Name = "Body"
-body.Position = UDim2.new(0, 0, 0, 44)
-body.Size = UDim2.new(1, 0, 1, -44)
+body.Position = UDim2.new(0, 0, 0, 42)
+body.Size = UDim2.new(1, 0, 1, -42)
 body.BackgroundTransparency = 1
 body.Parent = main
 
--- Kotak Pencarian + Tombol Hapus (X) + Tombol Cari
-local searchBg = Instance.new("Frame")
-searchBg.Position = UDim2.new(0, 12, 0, 4)
-searchBg.Size = UDim2.new(1, -82, 0, 36)
-searchBg.BackgroundColor3 = Color3.fromRGB(30, 34, 42)
-searchBg.BorderSizePixel = 0
-searchBg.Parent = body
-Instance.new("UICorner", searchBg).CornerRadius = UDim.new(0, 8)
-
 local searchBox = Instance.new("TextBox")
-searchBox.Position = UDim2.new(0, 10, 0, 0)
-searchBox.Size = UDim2.new(1, -38, 1, 0)
-searchBox.BackgroundTransparency = 1
+searchBox.Position = UDim2.new(0, 12, 0, 4)
+searchBox.Size = UDim2.new(1, -110, 0, 32)
+searchBox.BackgroundColor3 = Color3.fromRGB(32, 36, 44)
 searchBox.TextColor3 = Color3.new(1, 1, 1)
-searchBox.PlaceholderColor3 = Color3.fromRGB(140, 148, 160)
+searchBox.PlaceholderColor3 = Color3.fromRGB(145, 152, 162)
 searchBox.PlaceholderText = "Cari judul lagu / artis..."
 searchBox.ClearTextOnFocus = false
 searchBox.Font = Enum.Font.Gotham
 searchBox.TextSize = 12
-searchBox.TextXAlignment = Enum.TextXAlignment.Left
 searchBox.Text = ""
-searchBox.Parent = searchBg
+searchBox.Parent = body
+Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 7)
 
-local clearSearchBtn = makeButton(searchBg, "×", UDim2.new(1, -28, 0, 5), UDim2.new(0, 24, 0, 26), Color3.fromRGB(48, 54, 66))
-clearSearchBtn.TextSize = 14
+local clearSearchBtn = makeButton(body, "×", UDim2.new(1, -94, 0, 4), UDim2.new(0, 26, 0, 32), Color3.fromRGB(50, 56, 66))
 clearSearchBtn.MouseButton1Click:Connect(function()
     searchBox.Text = ""
     searchBox:CaptureFocus()
 end)
 
-local searchBtn = makeButton(body, "CARI", UDim2.new(1, -64, 0, 4), UDim2.new(0, 52, 0, 36), Color3.fromRGB(30, 165, 95))
+local searchBtn = makeButton(body, "CARI", UDim2.new(1, -64, 0, 4), UDim2.new(0, 52, 0, 32), Color3.fromRGB(30, 160, 95))
 
 -- Daftar Hasil Pencarian
 local resultsFrame = Instance.new("ScrollingFrame")
-resultsFrame.Position = UDim2.new(0, 12, 0, 46)
-resultsFrame.Size = UDim2.new(1, -24, 0, 68)
-resultsFrame.BackgroundColor3 = Color3.fromRGB(24, 28, 35)
+resultsFrame.Position = UDim2.new(0, 12, 0, 42)
+resultsFrame.Size = UDim2.new(1, -24, 0, 64)
+resultsFrame.BackgroundColor3 = Color3.fromRGB(26, 30, 37)
 resultsFrame.BorderSizePixel = 0
 resultsFrame.ScrollBarThickness = 5
-resultsFrame.ScrollBarImageColor3 = Color3.fromRGB(30, 215, 115)
 resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 resultsFrame.Parent = body
-Instance.new("UICorner", resultsFrame).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", resultsFrame).CornerRadius = UDim.new(0, 7)
 
 local resultLayout = Instance.new("UIListLayout", resultsFrame)
 resultLayout.Padding = UDim.new(0, 4)
 resultLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-local resultPad = Instance.new("UIPadding", resultsFrame)
-resultPad.PaddingTop = UDim.new(0, 4)
-resultPad.PaddingBottom = UDim.new(0, 4)
-resultPad.PaddingLeft = UDim.new(0, 4)
-resultPad.PaddingRight = UDim.new(0, 4)
-
--- Panel Lirik Karaoke
+-- Area Lirik Utama
 local lyricCard = Instance.new("TextButton")
 lyricCard.Name = "LyricCard"
-lyricCard.Position = UDim2.new(0, 12, 0, 120)
-lyricCard.Size = UDim2.new(1, -24, 0, 100)
-lyricCard.BackgroundColor3 = Color3.fromRGB(24, 28, 35)
+lyricCard.Position = UDim2.new(0, 12, 0, 112)
+lyricCard.Size = UDim2.new(1, -24, 0, 96)
+lyricCard.BackgroundColor3 = Color3.fromRGB(25, 29, 36)
 lyricCard.BorderSizePixel = 0
 lyricCard.Text = ""
 lyricCard.AutoButtonColor = false
 lyricCard.Parent = body
-Instance.new("UICorner", lyricCard).CornerRadius = UDim.new(0, 10)
-local cardStroke = Instance.new("UIStroke", lyricCard)
-cardStroke.Color = Color3.fromRGB(45, 52, 65)
-cardStroke.Thickness = 1
+Instance.new("UICorner", lyricCard).CornerRadius = UDim.new(0, 9)
 
-local prevLine = makeLabel(lyricCard, "Previous", UDim2.new(0, 10, 0, 5), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 138, 150))
-local currentLine = makeLabel(lyricCard, "Current", UDim2.new(0, 10, 0, 26), UDim2.new(1, -20, 0, 46), "Menunggu lagu...", 16, Color3.fromRGB(255, 255, 255))
+local prevLine = makeLabel(lyricCard, "Previous", UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 20), "", 11, Color3.fromRGB(135, 143, 153))
+local currentLine = makeLabel(lyricCard, "Current", UDim2.new(0, 8, 0, 25), UDim2.new(1, -16, 0, 44), "Menunggu lagu...", 15, Color3.fromRGB(255, 255, 255))
 currentLine.Font = Enum.Font.GothamBold
-local nextLine = makeLabel(lyricCard, "Next", UDim2.new(0, 10, 0, 74), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 138, 150))
+local nextLine = makeLabel(lyricCard, "Next", UDim2.new(0, 8, 0, 71), UDim2.new(1, -16, 0, 20), "", 11, Color3.fromRGB(135, 143, 153))
 
 lyricCard.MouseButton1Click:Connect(function()
     local txt = currentLine.Text
     if txt ~= "" and txt ~= "Menunggu lagu..." and txt ~= "Mendeteksi lagu..." and txt ~= "Lirik tidak tersedia." and txt ~= "♪" then
         sendChat(txt)
-        cardStroke.Color = Color3.fromRGB(30, 215, 115)
-        task.delay(0.25, function()
-            if cardStroke then cardStroke.Color = Color3.fromRGB(45, 52, 65) end
-        end)
     end
 end)
 
 -- ======================== PROGRESS BAR LAGU & WAKTU REAL-TIME ========================
-local timeCurrentLbl = makeLabel(body, "TimeCurrent", UDim2.new(0, 12, 0, 225), UDim2.new(0, 45, 0, 18), "00:00", 10, Color3.fromRGB(165, 175, 185))
-timeCurrentLbl.Font = Enum.Font.GothamSemibold
+local timeCurrentLbl = makeLabel(body, "TimeCurrent", UDim2.new(0, 12, 0, 213), UDim2.new(0, 42, 0, 16), "00:00", 10, Color3.fromRGB(165, 175, 185))
 timeCurrentLbl.TextXAlignment = Enum.TextXAlignment.Left
 
 local progBarBg = Instance.new("Frame")
 progBarBg.Name = "ProgressBarBg"
-progBarBg.Position = UDim2.new(0, 56, 0, 231)
-progBarBg.Size = UDim2.new(1, -112, 0, 6)
-progBarBg.BackgroundColor3 = Color3.fromRGB(36, 42, 52)
+progBarBg.Position = UDim2.new(0, 54, 0, 219)
+progBarBg.Size = UDim2.new(1, -108, 0, 5)
+progBarBg.BackgroundColor3 = Color3.fromRGB(38, 44, 54)
 progBarBg.BorderSizePixel = 0
 progBarBg.Parent = body
 Instance.new("UICorner", progBarBg).CornerRadius = UDim.new(1, 0)
@@ -541,46 +518,41 @@ Instance.new("UICorner", progBarBg).CornerRadius = UDim.new(1, 0)
 local progBarFill = Instance.new("Frame")
 progBarFill.Name = "Fill"
 progBarFill.Size = UDim2.new(0, 0, 1, 0)
-progBarFill.BackgroundColor3 = Color3.fromRGB(30, 215, 115)
+progBarFill.BackgroundColor3 = Color3.fromRGB(30, 215, 125)
 progBarFill.BorderSizePixel = 0
 progBarFill.Parent = progBarBg
 Instance.new("UICorner", progBarFill).CornerRadius = UDim.new(1, 0)
 
-local timeTotalLbl = makeLabel(body, "TimeTotal", UDim2.new(1, -57, 0, 225), UDim2.new(0, 45, 0, 18), "00:00", 10, Color3.fromRGB(165, 175, 185))
-timeTotalLbl.Font = Enum.Font.GothamSemibold
+local timeTotalLbl = makeLabel(body, "TimeTotal", UDim2.new(1, -54, 0, 213), UDim2.new(0, 42, 0, 16), "00:00", 10, Color3.fromRGB(165, 175, 185))
 timeTotalLbl.TextXAlignment = Enum.TextXAlignment.Right
 
 -- Informasi Sinkronisasi
-local syncInfo = makeLabel(body, "SyncInfo", UDim2.new(0, 12, 0, 248), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(30, 230, 135))
-syncInfo.Font = Enum.Font.GothamSemibold
+local syncInfo = makeLabel(body, "SyncInfo", UDim2.new(0, 12, 0, 234), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(30, 230, 135))
+syncInfo.TextXAlignment = Enum.TextXAlignment.Center
 
--- Kontrol Kecepatan & Offset
-local slowerBtn = makeButton(body, "−", UDim2.new(0, 12, 0, 272), UDim2.new(0, 42, 0, 34))
+-- Kontrol Kecepatan & Offset (Ramah Sentuhan)
+local slowerBtn = makeButton(body, "−", UDim2.new(0, 12, 0, 256), UDim2.new(0, 38, 0, 32))
 slowerBtn.TextSize = 16
-local speedBtn = makeButton(body, "1.00x", UDim2.new(0, 58, 0, 272), UDim2.new(0, 68, 0, 34))
-local fasterBtn = makeButton(body, "+", UDim2.new(0, 130, 0, 272), UDim2.new(0, 42, 0, 34))
+local speedBtn = makeButton(body, "1.00x", UDim2.new(0, 54, 0, 256), UDim2.new(0, 68, 0, 32))
+local fasterBtn = makeButton(body, "+", UDim2.new(0, 126, 0, 256), UDim2.new(0, 38, 0, 32))
 fasterBtn.TextSize = 16
 
-local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 180, 0, 272), UDim2.new(0, 76, 0, 34))
-local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 262, 0, 272), UDim2.new(0, 76, 0, 34))
+local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 172, 0, 256), UDim2.new(0, 74, 0, 32))
+local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 252, 0, 256), UDim2.new(0, 76, 0, 32))
 
 -- Baris Bawah: Reset Auto-Sync & Toggle Auto-Chat
-local resetSyncBtn = makeButton(body, "🔄 AUTO SYNC", UDim2.new(0, 12, 0, 314), UDim2.new(0, 156, 0, 34), Color3.fromRGB(48, 58, 70))
-local chatBtn = makeButton(body, "💬 Auto-Chat: OFF", UDim2.new(0, 174, 0, 314), UDim2.new(0, 164, 0, 34), Color3.fromRGB(36, 41, 49))
+local resetSyncBtn = makeButton(body, "🔄 AUTO SYNC", UDim2.new(0, 12, 0, 296), UDim2.new(0, 152, 0, 32), Color3.fromRGB(52, 62, 74))
+local chatBtn = makeButton(body, "💬 Auto-Chat: OFF", UDim2.new(0, 170, 0, 296), UDim2.new(0, 158, 0, 32), Color3.fromRGB(39, 45, 51))
 
-local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 354), UDim2.new(1, -24, 0, 18), "Tips: Ketuk 📺 di atas untuk Subtitle transparan di layar.", 10, Color3.fromRGB(120, 128, 140))
+local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 336), UDim2.new(1, -24, 0, 18), "Ketuk 📺 di atas untuk Subtitle transparan di layar.", 10, Color3.fromRGB(130, 138, 150))
 
 -- ======================== LOGIKA TOMBOL & MINIMIZE ========================
-
-local function setStatus(text)
-    subHeader.Text = text
-end
 
 -- 0. Tombol Subtitle HUD Mengambang (📺)
 subToggleBtn.MouseButton1Click:Connect(function()
     isSubtitleEnabled = not isSubtitleEnabled
     subtitleFrame.Visible = isSubtitleEnabled
-    subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(30, 150, 90) or Color3.fromRGB(38, 44, 54)
+    subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(30, 150, 90) or Color3.fromRGB(39, 45, 55)
 end)
 
 -- 1. Tombol Minimize (Mode Compact vs Mode Penuh)
@@ -590,14 +562,12 @@ minBtn.MouseButton1Click:Connect(function()
         minBtn.Text = "+"
         body.Visible = false
         miniBar.Visible = true
-        TweenService:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = MINI_SIZE}):Play()
+        TweenService:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MINI_SIZE}):Play()
     else
         minBtn.Text = "—"
         miniBar.Visible = false
-        TweenService:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = FULL_SIZE}):Play()
-        task.delay(0.12, function()
-            if not isMinimized then body.Visible = true end
-        end)
+        body.Visible = true
+        TweenService:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = FULL_SIZE}):Play()
     end
 end)
 
@@ -616,7 +586,7 @@ end)
 muteBtn.MouseButton1Click:Connect(function()
     isMutedLocally = not isMutedLocally
     muteBtn.Text = isMutedLocally and "🔇" or "🔊"
-    muteBtn.BackgroundColor3 = isMutedLocally and Color3.fromRGB(135, 55, 55) or Color3.fromRGB(38, 44, 54)
+    muteBtn.BackgroundColor3 = isMutedLocally and Color3.fromRGB(135, 55, 55) or Color3.fromRGB(39, 45, 55)
     if activeSound then
         if isMutedLocally then
             originalVolume = activeSound.Volume > 0 and activeSound.Volume or originalVolume
@@ -711,7 +681,7 @@ chatBtn.MouseButton1Click:Connect(function()
     autoChat = not autoChat
     lastSentLine = ""
     chatBtn.Text = "💬 Auto-Chat: " .. (autoChat and "ON" or "OFF")
-    chatBtn.BackgroundColor3 = autoChat and Color3.fromRGB(30, 150, 90) or Color3.fromRGB(36, 41, 49)
+    chatBtn.BackgroundColor3 = autoChat and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(39, 45, 51)
 end)
 
 -- ======================== PENCARIAN & HASIL ========================
@@ -743,7 +713,7 @@ local function activateResult(item, selectedBtn)
     isAutoRatioActive = false
 
     for _, btn in ipairs(resultButtons) do
-        btn.BackgroundColor3 = (btn == selectedBtn) and Color3.fromRGB(30, 135, 80) or Color3.fromRGB(34, 39, 48)
+        btn.BackgroundColor3 = (btn == selectedBtn) and Color3.fromRGB(30, 135, 80) or Color3.fromRGB(35, 40, 48)
     end
 
     if not manualSpeedOverride then
@@ -752,20 +722,20 @@ local function activateResult(item, selectedBtn)
     end
     updateSyncText()
 
-    setStatus(item.Title .. " — " .. item.Artist)
+    status.Text = item.Title .. " — " .. item.Artist
     updateDisplayedLyric("", #lyrics > 0 and "♪ Lirik siap, menunggu sinkronisasi..." or "Lirik kosong.", "")
 end
 
 local function showResults(items)
     clearResults()
     if #items == 0 then
-        setStatus("Lirik tersinkronisasi tidak ditemukan.")
+        status.Text = "Lirik tersinkronisasi tidak ditemukan."
         updateDisplayedLyric("", "Lirik tidak tersedia.", "")
         return
     end
     for i, item in ipairs(items) do
         local durText = item.Duration > 0 and string.format(" (%d:%02d)", math.floor(item.Duration / 60), math.floor(item.Duration % 60)) or ""
-        local b = makeButton(resultsFrame, "  " .. item.Title .. " — " .. item.Artist .. durText, UDim2.new(), UDim2.new(1, -4, 0, 30), Color3.fromRGB(34, 39, 48))
+        local b = makeButton(resultsFrame, "  " .. item.Title .. " — " .. item.Artist .. durText, UDim2.new(), UDim2.new(1, -6, 0, 28), Color3.fromRGB(35, 40, 48))
         b.LayoutOrder = i
         b.TextXAlignment = Enum.TextXAlignment.Left
         b.TextTruncate = Enum.TextTruncate.AtEnd
@@ -775,7 +745,7 @@ local function showResults(items)
         end)
     end
     task.defer(function()
-        resultsFrame.CanvasSize = UDim2.new(0, 0, 0, resultLayout.AbsoluteContentSize.Y + 8)
+        resultsFrame.CanvasSize = UDim2.new(0, 0, 0, resultLayout.AbsoluteContentSize.Y + 6)
     end)
     activateResult(items[1], resultButtons[1])
 end
@@ -784,7 +754,7 @@ local searchId = 0
 local function doSearch(query, fallbackQueries)
     searchId += 1
     local thisSearch = searchId
-    setStatus("Mencari lirik...")
+    status.Text = "Mencari lirik..."
     clearResults()
 
     task.spawn(function()
@@ -883,7 +853,7 @@ task.spawn(function()
             timeTotalLbl.Text = "00:00"
 
             updateDisplayedLyric("", "Mendeteksi lagu...", "")
-            setStatus("Membaca metadata audio...")
+            status.Text = "Membaca metadata audio..."
 
             task.spawn(function()
                 task.wait(0.5)
@@ -926,14 +896,14 @@ task.spawn(function()
                     })
                 else
                     searchBox.Text = ""
-                    setStatus("Audio ID: " .. tostring(assetId or "Custom") .. " (Cari manual)")
+                    status.Text = "Audio ID: " .. tostring(assetId or "Custom") .. " (Cari manual)"
                     updateDisplayedLyric("", "Judul lagu tidak terdeteksi.", "")
                 end
             end)
         elseif not sound and activeSound then
             activeSound = nil
             activeSoundId = nil
-            setStatus("Menunggu musik diputar...")
+            status.Text = "Menunggu musik diputar..."
             progBarFill.Size = UDim2.new(0, 0, 1, 0)
             miniProgFill.Size = UDim2.new(0, 0, 1, 0)
             timeCurrentLbl.Text = "00:00"
@@ -1006,4 +976,12 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("Koplingtify Lite (Subtitle HUD + Progress Bar Edition) loaded.")
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title = "Koplingtify Lite",
+        Text = "Berhasil dimuat!",
+        Duration = 3
+    })
+end)
+
+print("Koplingtify Lite (Fixed Edition) loaded.")
