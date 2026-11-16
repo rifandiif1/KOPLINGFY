@@ -425,7 +425,7 @@ local wordReplacements = {
     ["jealous"] = "envious",
     ["cheating"] = "lying",
     ["cheat"] = "trick",
-    ["ex"] = "past"
+    ["ex"] = "past",
     -- ================= 3. BAHASA INGGRIS: KEKERASAN, DARAH & SENJATA =================
     ["suicidal"] = "hopeless",
     ["suicide"] = "give up",
