@@ -1,7 +1,7 @@
--- KOPLINGTIFY LITE (CUSTOM ORBIT CAMERA + SAFE WORD FILTER EDITION)
+-- KOPLINGTIFY LITE (FULL INTEGRATED & FIXED)
 -- Fitur: Auto-Sync durasi lagu, tanpa batas max speed 2x, Auto-Search pergantian lagu,
 -- UI Android ramah sentuh, Minimize, Floating Icon, Subtitle Transparan (HUD), Progress Bar,
--- Deteksi & Pengganti Kata Diblokir Roblox (Safe Lyrics), & Kamera Drone Orbit Full Setting.
+-- Filter Kata Kasar + Kata Rawan Sensor (Peluk/Cium/ODer), & Kamera Drone Orbit Full Setting.
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -43,12 +43,12 @@ local isMinimized = false
 local isOrbitEnabled = false
 local wasOrbitCam = false
 local orbitAngle = 0
-local orbitDistance = 10.0   -- Jarak kamera dari karakter (studs)
-local orbitHeight = 3.5      -- Ketinggian kamera (studs)
-local orbitSpeed = 0.55      -- Kecepatan putar (rad/detik)
-local orbitLookHeight = 1.0  -- Titik fokus ketinggian pada karakter
-local orbitFOV = 70          -- Field of View kamera saat orbit
-local orbitDirection = 1     -- 1 = Kanan (Searah), -1 = Kiri (Berlawanan)
+local orbitDistance = 10.0
+local orbitHeight = 3.5
+local orbitSpeed = 0.55
+local orbitLookHeight = 1.0
+local orbitFOV = 70
+local orbitDirection = 1
 local savedDefaultFOV = (workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView) or 70
 
 local FULL_SIZE = UDim2.new(0, 340, 0, 420)
@@ -73,798 +73,293 @@ local function formatTime(seconds)
     return string.format("%02d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
--- ======================== KAMUS FILTER KATA AMAN ROBLOX ========================
+-- ======================== KAMUS FILTER KATA AMAN ROBLOX (GABUNGAN PENUH) ========================
+local phraseReplacements = {
+    {"shut the fuck up", "keep it quiet"},
+    {"what the fuck", "what the heck"},
+    {"what the hell", "what the heck"},
+    {"piece of shit", "piece of junk"},
+    {"son of a bitch", "rascal"},
+    {"kill yourself", "take care"},
+    {"killing myself", "losing myself"},
+    {"want to die", "want to fly"},
+    {"wanna die", "wanna fly"},
+    {"gonna die", "gonna fly"},
+    {"make love", "hold hands"},
+    {"one night stand", "late night dance"},
+    {"bunuh diri", "menyerah"},
+    {"kurang ajar", "nakal sekali"},
+    {"anak haram", "anak jalanan"},
+    {"anak pungut", "anak rantau"},
+    {"tidur denganmu", "duduk denganmu"},
+    {"tidur bersamamu", "duduk bersamamu"},
+    {"di atas ranjang", "di atas awan"},
+    {"di dalam kamar", "di dalam ruang"},
+    {"jatuh cinta", "jatuh hati"},
+    {"putus cinta", "patah hati"},
+    {"malam pertama", "malam indah"},
+    {"peluk erat", "genggam erat"},
+    {"cium kening", "sapa hangat"},
+    {"cium pipi", "sapa manis"},
+    {"buka baju", "lepas jaket"},
+    {"ganti baju", "ganti gaya"},
+    {"nomor hp", "kode frekuensi"},
+    {"nomor telepon", "kode frekuensi"},
+    {"berapa umurmu", "apa kabarmu"},
+    {"sleep with me", "stay with me"},
+    {"sleeping with", "staying with"},
+    {"in my bed", "in my head"},
+    {"on the bed", "on the floor"},
+    {"in the bedroom", "in the room"},
+    {"kiss me", "miss me"},
+    {"kissing you", "missing you"},
+    {"kissed you", "missed you"},
+    {"hold my hand", "stand by me"},
+    {"touch my body", "feel the rhythm"},
+    {"touch your body", "feel the music"},
+    {"take off your", "put on your"},
+    {"fall in love", "fall apart"},
+    {"be my girlfriend", "be my friend"},
+    {"be my boyfriend", "be my friend"},
+    {"phone number", "lucky charm"},
+    {"how old are you", "how are you"}
+}
+
 local wordReplacements = {
-    -- ================= 1. BAHASA INGGRIS: UMPATAN & SLANG KASAR =================
-    ["motherfucker"] = "troublemaker",
-    ["motherfuckers"] = "troublemakers",
-    ["motherfuckin"] = "freakin",
-    ["motherfucking"] = "freaking",
-    ["muthafucka"] = "troublemaker",
-    ["muthafuckin"] = "freakin",
-    ["mf"] = "pal",
-    ["fucking"] = "freaking",
-    ["fuckin"] = "freakin",
-    ["fckin"] = "freakin",
-    ["fcking"] = "freaking",
-    ["fucked"] = "messed",
-    ["fucker"] = "joker",
-    ["fuckers"] = "jokers",
-    ["fuck"] = "freak",
-    ["fucks"] = "cares",
-    ["fck"] = "freak",
-    ["fuk"] = "freak",
-    ["fuq"] = "freak",
-    ["wtf"] = "what",
-    ["stfu"] = "shh",
-    ["shitting"] = "kidding",
-    ["shitty"] = "messy",
-    ["bullshit"] = "nonsense",
-    ["horseshit"] = "nonsense",
-    ["dipshit"] = "goofball",
-    ["shithead"] = "airhead",
-    ["shits"] = "shoots",
-    ["shit"] = "shoot",
-    ["sht"] = "shoot",
-    ["bitching"] = "complaining",
-    ["bitches"] = "witches",
-    ["bitchy"] = "sassy",
-    ["bitch"] = "witch",
-    ["btch"] = "witch",
-    ["biatch"] = "witch",
-    ["assholes"] = "rascals",
-    ["asshole"] = "rascal",
-    ["dumbass"] = "silly",
-    ["jackass"] = "clown",
-    ["badass"] = "cool",
-    ["fatass"] = "heavy",
-    ["asses"] = "butts",
-    ["ass"] = "butt",
-    ["arse"] = "butt",
-    ["bastards"] = "rascals",
-    ["bastard"] = "rascal",
-    ["dammit"] = "darnit",
-    ["damned"] = "darned",
-    ["damn"] = "darn",
-    ["goddammit"] = "goshdarn",
-    ["goddamn"] = "goshdarn",
-    ["hella"] = "super",
-    ["hell"] = "heck",
-    ["cunts"] = "jerks",
-    ["cunt"] = "jerk",
-    ["dicks"] = "jerks",
-    ["dickhead"] = "blockhead",
-    ["dick"] = "jerk",
-    ["cocks"] = "roosters",
-    ["cock"] = "rooster",
-    ["pussies"] = "kitties",
-    ["pussy"] = "kitty",
-    ["twat"] = "fool",
-    ["prick"] = "thorn",
-    ["wanker"] = "joker",
-    ["bollocks"] = "nonsense",
-    ["bugger"] = "rascal",
-    ["douchebag"] = "showoff",
-    ["douche"] = "showoff",
-    ["scumbag"] = "villain",
-    ["slutty"] = "flirty",
-    ["sluts"] = "heartbreakers",
-    ["slut"] = "heartbreaker",
-    ["whores"] = "players",
-    ["whore"] = "player",
-    ["hoe"] = "player",
-    ["hoes"] = "players",
-    ["skank"] = "meanie",
-    ["prostitute"] = "dancer",
-    ["stripper"] = "dancer",
-    ["hooker"] = "dancer",
-    ["pimp"] = "boss",
+    -- Umpatan & Kasar Inggris
+    ["motherfucker"] = "troublemaker", ["motherfuckers"] = "troublemakers",
+    ["motherfuckin"] = "freakin", ["motherfucking"] = "freaking",
+    ["muthafucka"] = "troublemaker", ["muthafuckin"] = "freakin",
+    ["mf"] = "pal", ["fucking"] = "freaking", ["fuckin"] = "freakin",
+    ["fckin"] = "freakin", ["fcking"] = "freaking", ["fucked"] = "messed",
+    ["fucker"] = "joker", ["fuckers"] = "jokers", ["fuck"] = "freak",
+    ["fucks"] = "cares", ["fck"] = "freak", ["fuk"] = "freak", ["fuq"] = "freak",
+    ["wtf"] = "what", ["stfu"] = "shh", ["shitting"] = "kidding",
+    ["shitty"] = "messy", ["bullshit"] = "nonsense", ["horseshit"] = "nonsense",
+    ["dipshit"] = "goofball", ["shithead"] = "airhead", ["shits"] = "shoots",
+    ["shit"] = "shoot", ["sht"] = "shoot", ["bitching"] = "complaining",
+    ["bitches"] = "witches", ["bitchy"] = "sassy", ["bitch"] = "witch",
+    ["btch"] = "witch", ["biatch"] = "witch", ["assholes"] = "rascals",
+    ["asshole"] = "rascal", ["dumbass"] = "silly", ["jackass"] = "clown",
+    ["badass"] = "cool", ["fatass"] = "heavy", ["asses"] = "butts",
+    ["ass"] = "butt", ["arse"] = "butt", ["bastards"] = "rascals",
+    ["bastard"] = "rascal", ["dammit"] = "darnit", ["damned"] = "darned",
+    ["damn"] = "darn", ["goddammit"] = "goshdarn", ["goddamn"] = "goshdarn",
+    ["hella"] = "super", ["hell"] = "heck", ["cunts"] = "jerks", ["cunt"] = "jerk",
+    ["dicks"] = "jerks", ["dickhead"] = "blockhead", ["dick"] = "jerk",
+    ["cocks"] = "roosters", ["cock"] = "rooster", ["pussies"] = "kitties",
+    ["pussy"] = "kitty", ["twat"] = "fool", ["prick"] = "thorn",
+    ["wanker"] = "joker", ["bollocks"] = "nonsense", ["bugger"] = "rascal",
+    ["douchebag"] = "showoff", ["douche"] = "showoff", ["scumbag"] = "villain",
+    ["slutty"] = "flirty", ["sluts"] = "heartbreakers", ["slut"] = "heartbreaker",
+    ["whores"] = "players", ["whore"] = "player", ["hoe"] = "player",
+    ["hoes"] = "players", ["skank"] = "meanie", ["prostitute"] = "dancer",
+    ["stripper"] = "dancer", ["hooker"] = "dancer", ["pimp"] = "boss",
 
-    -- ================= 2. BAHASA INGGRIS: RASIAL & DISKRIMINASI =================
-    ["nigga"] = "homie",
-    ["niggas"] = "homies",
-    ["niggaz"] = "homies",
-    ["nigger"] = "brother",
-    ["niggers"] = "brothers",
-    ["nibba"] = "homie",
-    ["negro"] = "fellow",
-    ["faggot"] = "fool",
-    ["faggots"] = "fools",
-    ["fag"] = "fool",
-    ["fags"] = "fools",
-    ["dyke"] = "rebel",
-    ["tranny"] = "person",
-    ["retard"] = "silly",
-    ["retards"] = "goofballs",
-    ["retarded"] = "foolish",
-    ["cripple"] = "broken",
-    ["spastic"] = "frantic",
--- 1. KONTAK FISIK / SENTUHAN (INDO)
-    ["peluk"] = "rengkuh",
-    ["memeluk"] = "merengkuh",
-    ["memelukmu"] = "merengkuhmu",
-    ["pelukan"] = "rengkuhan",
-    ["pelukanmu"] = "rengkuhanmu",
-    ["dipeluk"] = "direngkuh",
-    ["dekap"] = "jaga",
-    ["mendekap"] = "menjaga",
-    ["dekapan"] = "naungan",
-    ["rangkul"] = "gandeng",
-    ["merangkul"] = "menggandeng",
-    ["cium"] = "sapa",
-    ["mencium"] = "menyapa",
-    ["menciummu"] = "menyapamu",
-    ["ciuman"] = "sapaan",
-    ["dicium"] = "disapa",
-    ["kecup"] = "sapa",
-    ["mengecup"] = "menyapa",
-    ["kecupan"] = "sapaan",
-    ["belai"] = "usap",
-    ["membelai"] = "mengusap",
-    ["belaian"] = "usapan",
-    ["sentuh"] = "raih",
-    ["menyentuh"] = "meraih",
-    ["menyentuhmu"] = "meraihmu",
-    ["sentuhan"] = "raihan",
-    ["tersentuh"] = "tergugah",
-    ["raba"] = "cari",
-    ["meraba"] = "mencari",
-    ["pangku"] = "damping",
-    ["memangku"] = "mendampingi",
-    ["pangkuan"] = "sisi",
-    ["gandeng"] = "iring",
-    ["menggandeng"] = "mengiringi",
-    ["elus"] = "usap",
-    ["mengelus"] = "mengusap",
+    -- Rasial & Diskriminasi
+    ["nigga"] = "homie", ["niggas"] = "homies", ["niggaz"] = "homies",
+    ["nigger"] = "brother", ["niggers"] = "brothers", ["nibba"] = "homie",
+    ["negro"] = "fellow", ["faggot"] = "fool", ["faggots"] = "fools",
+    ["fag"] = "fool", ["fags"] = "fools", ["dyke"] = "rebel",
+    ["tranny"] = "person", ["retard"] = "silly", ["retards"] = "goofballs",
+    ["retarded"] = "foolish", ["cripple"] = "broken", ["spastic"] = "frantic",
 
-    -- 2. PACARAN / ROMANSA / ANTI-ODER (INDO)
-    ["pacar"] = "rekan",
-    ["pacarku"] = "rekanku",
-    ["pacarmu"] = "rekanmu",
-    ["pacaran"] = "berteman",
-    ["berpacaran"] = "berteman",
-    ["kekasih"] = "pujaan",
-    ["kekasihku"] = "pujaanku",
-    ["kekasihmu"] = "pujaanmu",
-    ["sayang"] = "kasih",
-    ["sayangku"] = "kasihku",
-    ["sayangi"] = "kasihi",
-    ["menyayangi"] = "mengasihi",
-    ["kesayangan"] = "kebanggaan",
-    ["cinta"] = "asa",
-    ["cintaku"] = "asaku",
-    ["cintamu"] = "asamu",
-    ["mencintai"] = "mengagumi",
-    ["mencintaimu"] = "mengagumimu",
-    ["dicintai"] = "dikagumi",
-    ["percintaan"] = "perjalanan",
-    ["asmara"] = "irama",
-    ["kasmaran"] = "bahagia",
-    ["romantis"] = "manis",
-    ["mesra"] = "akrab",
-    ["kemesraan"] = "keakraban",
-    ["bermesraan"] = "bersenda gurau",
-    ["kencan"] = "jalan",
-    ["berkencan"] = "berjalan",
-    ["jadian"] = "bersama",
-    ["gebetan"] = "idola",
-    ["mantan"] = "kenangan",
-    ["mantanku"] = "masa laluku",
-    ["nikah"] = "janji",
-    ["menikah"] = "berjanji",
-    ["menikahimu"] = "menemanimu",
-    ["pernikahan"] = "ikatan",
-    ["pengantin"] = "pasangan",
-    ["suami"] = "pendamping",
-    ["suamiku"] = "pendampingku",
-    ["istri"] = "pendamping",
-    ["istriku"] = "pendampingku",
-    ["jodoh"] = "takdir",
-    ["rayu"] = "bujuk",
-    ["merayu"] = "membujuk",
-    ["rayuan"] = "pujian",
-    ["goda"] = "canda",
-    ["menggoda"] = "bercanda",
-    ["godaan"] = "candaan",
+    -- Kekerasan & Senjata Inggris
+    ["suicidal"] = "hopeless", ["suicide"] = "give up", ["kms"] = "sigh", ["kys"] = "bye",
+    ["killing"] = "chilling", ["killed"] = "chilled", ["killer"] = "hunter",
+    ["kills"] = "chills", ["kill"] = "chill", ["murderer"] = "stranger",
+    ["murdered"] = "vanished", ["murdering"] = "chasing", ["murder"] = "mystery",
+    ["homicide"] = "incident", ["genocide"] = "wipeout", ["massacre"] = "chaos",
+    ["slaughter"] = "defeat", ["butcher"] = "fighter", ["dying"] = "fading",
+    ["died"] = "faded", ["dies"] = "fades", ["die"] = "fly", ["dead"] = "gone",
+    ["death"] = "sleep", ["corpse"] = "statue", ["coffin"] = "box", ["grave"] = "ground",
+    ["bleeding"] = "crying", ["bleed"] = "cry", ["bloody"] = "messy", ["blood"] = "sweat",
+    ["gore"] = "mess", ["stabbed"] = "poked", ["stabbing"] = "poking", ["stab"] = "poke",
+    ["slit"] = "cut", ["choke"] = "gasp", ["choking"] = "gasping", ["strangle"] = "grab",
+    ["hang"] = "hold", ["hanged"] = "held", ["shoot"] = "blast", ["shooting"] = "blasting",
+    ["shotgun"] = "blaster", ["gunshot"] = "thunder", ["guns"] = "blasters", ["gun"] = "blaster",
+    ["pistol"] = "blaster", ["rifle"] = "blaster", ["glock"] = "blaster", ["ak47"] = "blaster",
+    ["bullets"] = "sparks", ["bullet"] = "spark", ["trigger"] = "switch", ["bomb"] = "boom",
+    ["terrorist"] = "villain", ["terrorism"] = "chaos", ["hostage"] = "captive",
+    ["torture"] = "trouble", ["abuse"] = "mistreat", ["violent"] = "wild", ["violence"] = "chaos",
 
-    -- 3. BAGIAN TUBUH & BUSANA YANG SERING KENA FILTER (INDO)
-    ["bibir"] = "senyum",
-    ["bibirmu"] = "senyummu",
-    ["bibirku"] = "senyumku",
-    ["lidah"] = "ucap",
-    ["leher"] = "bahu",
-    ["lehermu"] = "bahumu",
-    ["dada"] = "hati",
-    ["dadamu"] = "hatimu",
-    ["dadaku"] = "hatiku",
-    ["perut"] = "raga",
-    ["pinggang"] = "sisi",
-    ["pinggul"] = "langkah",
-    ["paha"] = "kaki",
-    ["kulit"] = "rona",
-    ["kulitmu"] = "ronamu",
-    ["tubuh"] = "raga",
-    ["tubuhmu"] = "ragamu",
-    ["tubuhku"] = "ragaku",
-    ["badan"] = "raga",
-    ["badanmu"] = "ragamu",
-    ["badanku"] = "ragaku",
-    ["keringat"] = "peluh",
-    ["berkeringat"] = "berpeluh",
-    ["desahan"] = "hembusan",
-    ["napas"] = "hembus",
-    ["napasmu"] = "hembusanmu",
-    ["baju"] = "jubah",
-    ["bajumu"] = "jubahmu",
-    ["celana"] = "pakaian",
-    ["rok"] = "gaun",
-    ["pakaian"] = "busana",
-    ["handuk"] = "kain",
+    -- Dewasa, Romansa & Obat Inggris
+    ["sexual"] = "romantic", ["sexually"] = "deeply", ["sex"] = "love",
+    ["sexy"] = "lovely", ["sexiest"] = "loveliest", ["porn"] = "movie",
+    ["porno"] = "movie", ["hentai"] = "anime", ["nsfw"] = "secret",
+    ["nude"] = "bare", ["nudes"] = "photos", ["naked"] = "bare",
+    ["horny"] = "lonely", ["orgasm"] = "climax", ["climax"] = "peak",
+    ["cum"] = "come", ["cumming"] = "coming", ["sperm"] = "seed",
+    ["erection"] = "rising", ["boner"] = "spark", ["boobs"] = "chest",
+    ["boob"] = "chest", ["titties"] = "chest", ["tits"] = "chest", ["tit"] = "chest",
+    ["nipples"] = "buttons", ["nipple"] = "button", ["booty"] = "hips",
+    ["thighs"] = "legs", ["virgin"] = "innocent", ["virginity"] = "innocence",
+    ["lust"] = "desire", ["fetish"] = "habit", ["kinky"] = "quirky", ["bdsm"] = "chains",
+    ["rape"] = "hurt", ["raped"] = "hurt", ["rapist"] = "villain", ["molest"] = "bother",
+    ["pedophile"] = "creep", ["pedo"] = "creep", ["incest"] = "kin",
+    ["drugs"] = "sweets", ["drug"] = "candy", ["weed"] = "herb", ["marijuana"] = "herbs",
+    ["cannabis"] = "herbs", ["blunt"] = "stick", ["joint"] = "roll", ["stoned"] = "sleepy",
+    ["cocaine"] = "powder", ["coke"] = "soda", ["heroin"] = "potion", ["meth"] = "crystal",
+    ["ecstasy"] = "joy", ["molly"] = "candy", ["lsd"] = "dream", ["acid"] = "lemon",
+    ["pills"] = "mints", ["pill"] = "mint", ["overdose"] = "overload", ["addict"] = "fan",
+    ["addicted"] = "hooked", ["nicotine"] = "caffeine", ["cigarette"] = "candle",
+    ["cigarettes"] = "candles", ["vape"] = "mist", ["smoking"] = "glowing",
+    ["smoke"] = "cloud", ["drunk"] = "dizzy", ["wasted"] = "tired", ["tipsy"] = "giggly",
+    ["alcohol"] = "soda", ["liquor"] = "juice", ["whiskey"] = "tea", ["vodka"] = "water",
+    ["tequila"] = "lemonade", ["beer"] = "rootbeer", ["wine"] = "grape",
+    ["champagne"] = "sparkling", ["bartender"] = "barista",
 
-    -- 4. TEMPAT PRIVAT & AKTIVITAS MALAM (INDO)
-    ["kamar"] = "ruang",
-    ["kamarmu"] = "ruangmu",
-    ["kamarku"] = "ruangku",
-    ["ranjang"] = "peraduan",
-    ["kasur"] = "alas",
-    ["bantal"] = "sandaran",
-    ["selimut"] = "penghangat",
-    ["guling"] = "sandaran",
-    ["tidur"] = "lelap",
-    ["tidurlah"] = "lelaplah",
-    ["meniduri"] = "menemani",
-    ["ketiduran"] = "terlelap",
-    ["mandi"] = "basuh",
-    ["hotel"] = "gedung",
-    ["penginapan"] = "singgahan",
-    ["kos"] = " tempat",
-    ["kosan"] = "tempat",
+    -- Kata Sopan Rawan Sensor Inggris (Touch/Romance)
+    ["kiss"] = "greet", ["kisses"] = "smiles", ["kissing"] = "smiling", ["kissed"] = "smiled",
+    ["hug"] = "hold", ["hugs"] = "holds", ["hugging"] = "holding", ["hugged"] = "held",
+    ["cuddle"] = "huddle", ["cuddling"] = "huddling", ["caress"] = "breeze",
+    ["touch"] = "reach", ["touches"] = "reaches", ["touching"] = "reaching", ["touched"] = "reached",
+    ["lips"] = "smile", ["lip"] = "smile", ["tongue"] = "voice", ["neck"] = "shoulder",
+    ["chest"] = "heart", ["waist"] = "side", ["hips"] = "steps", ["hip"] = "step",
+    ["thigh"] = "leg", ["skin"] = "glow", ["body"] = "soul", ["bodies"] = "souls",
+    ["sweat"] = "rain", ["sweating"] = "shining", ["breath"] = "wind", ["breathe"] = "sigh",
+    ["breathing"] = "sighing", ["moan"] = "sigh", ["moaning"] = "sighing", ["whisper"] = "echo",
+    ["undress"] = "unwind", ["clothes"] = "outfit", ["shirt"] = "jacket", ["pants"] = "shoes",
+    ["skirt"] = "dress", ["underwear"] = "gear", ["bra"] = "top", ["panties"] = "gear",
+    ["bikini"] = "swimsuit", ["bed"] = "cloud", ["bedroom"] = "room", ["sheets"] = "clouds",
+    ["pillow"] = "cushion", ["blanket"] = "cover", ["shower"] = "rain", ["hotel"] = "tower",
+    ["motel"] = "tower", ["boyfriend"] = "partner", ["girlfriend"] = "partner",
+    ["lover"] = "dreamer", ["lovers"] = "dreamers", ["dating"] = "hanging", ["date"] = "meet",
+    ["marry"] = "promise", ["married"] = "promised", ["wedding"] = "party",
+    ["husband"] = "partner", ["wife"] = "partner", ["bride"] = "star", ["groom"] = "star",
+    ["babe"] = "star", ["baby"] = "darling", ["honey"] = "sweetie", ["sugar"] = "sweet",
+    ["shawty"] = "shorty", ["shorty"] = "friend", ["daddy"] = "boss", ["mommy"] = "queen",
+    ["crush"] = "spark", ["flirt"] = "tease", ["flirting"] = "joking", ["seduce"] = "charm",
+    ["jealous"] = "envious", ["cheating"] = "lying", ["cheat"] = "trick", ["ex"] = "past",
 
-    -- 5. DATA PRIBADI / IDENTITAS / UANG (INDO)
-    ["umur"] = "waktu",
-    ["umurmu"] = "waktumu",
-    ["umurku"] = "waktuku",
-    ["usia"] = "masa",
-    ["alamat"] = "arah",
-    ["nomor"] = "angka",
-    ["telepon"] = "suara",
-    [" telp"] = " suara",
-    ["hp"] = "layar",
-    ["handphone"] = "layar",
-    ["wa"] = "pesan",
-    ["ig"] = "galeri",
-    ["fb"] = "halaman",
-    ["tt"] = "video",
-    ["uang"] = "koin",
-    ["duit"] = "koin",
-    ["bayar"] = "tukar",
-    ["membayar"] = "menukar",
-    ["jual"] = "beri",
-    ["beli"] = "ambil",
-    ["harga"] = "nilai",
+    -- Umpatan, Kasar & Slang Indonesia
+    ["anjing"] = "kucing", ["anjir"] = "astaga", ["anjay"] = "keren", ["anjrit"] = "waduh",
+    ["anjrot"] = "waduh", ["anying"] = "kucing", ["njir"] = "wah", ["njay"] = "keren",
+    ["asu"] = "kucing", ["babi"] = "kelinci", ["celeng"] = "kelinci", ["monyet"] = "kera",
+    ["kunyuk"] = "kera", ["kampret"] = "kelelawar", ["bangsat"] = "nakal", ["bgst"] = "nakal",
+    ["brengsek"] = "bandel", ["bajingan"] = "penjahat", ["keparat"] = "nakal", ["bedebah"] = "bandel",
+    ["kurangajar"] = "nakal", ["sialan"] = "aduhai", ["sial"] = "malang", ["bangke"] = "ranting",
+    ["bangkai"] = "ranting", ["tai"] = "debu", ["tahi"] = "debu", ["taik"] = "debu",
+    ["berak"] = "pergi", ["kentut"] = "angin", ["kencing"] = "air", ["bacot"] = "bicara",
+    ["bct"] = "bicara", ["cocot"] = "mulut", ["congor"] = "mulut", ["nyinyir"] = "cerewet",
+    ["mampus"] = "habis", ["modar"] = "habis", ["kojor"] = "lemas", ["matek"] = "lemas",
+    ["setan"] = "bayangan", ["syaiton"] = "bayangan", ["iblis"] = "bayangan", ["dajjal"] = "raksasa",
+    ["neraka"] = "lembah", ["jahanam"] = "gelap", ["laknat"] = "buruk", ["terkutuk"] = "terlupakan",
+    ["haram"] = "terlarang", ["dosa"] = "salah", ["berdosa"] = "bersalah", ["kafir"] = "asing",
+    ["goblok"] = "polos", ["goblog"] = "polos", ["gblk"] = "polos", ["tolol"] = "lucu",
+    ["tll"] = "lucu", ["bodoh"] = "polos", ["bego"] = "lugu", ["begok"] = "lugu",
+    ["oon"] = "lugu", ["bloon"] = "lugu", ["dungu"] = "polos", ["idiot"] = "unik",
+    ["autis"] = "fokus", ["cacat"] = "kurang", ["gila"] = "heboh", ["sinting"] = "heboh",
+    ["sarap"] = "heboh", ["edan"] = "heboh", ["stres"] = "pusing", ["depresi"] = "sedih",
+    ["frustrasi"] = "kecewa", ["budek"] = "kurang dengar", ["buta"] = "gelap", ["bisu"] = "diam",
+    ["pincang"] = "pelan", ["gendut"] = "gemoy", ["gembrot"] = "gemoy", ["ceking"] = "ramping",
+    ["jelek"] = "biasa", ["burik"] = "pudar", ["dekil"] = "lusuh", ["miskin"] = "sederhana",
+    ["melarat"] = "sederhana", ["gembel"] = "pengembara", ["pengemis"] = "pencari",
+    ["sampah"] = "dedaunan", ["pecundang"] = "pemula", ["cupu"] = "pemula", ["noob"] = "pemula",
+    ["jancok"] = "astaga", ["jancuk"] = "astaga", ["dancok"] = "astaga", ["cuk"] = "kawan",
+    ["cok"] = "kawan", ["jangkrik"] = "belalang", ["matamu"] = "matanya", ["ndasmu"] = "kepalamu",
+    ["lambemu"] = "ucapanmu", ["raimu"] = "wajahmu", ["pantek"] = "waduh", ["kimak"] = "astaga",
+    ["pukimak"] = "astaga", ["puki"] = "kucing", ["sundal"] = "nakal",
+
+    -- Dewasa, Vulgar & Kekerasan Indonesia
+    ["kontol"] = "konyol", ["kntl"] = "konyol", ["memek"] = "bebek", ["mmk"] = "bebek",
+    ["pepek"] = "bebek", ["jembut"] = "rambut", ["jmbt"] = "rambut", ["itil"] = "kecil",
+    ["pentil"] = "ujung", ["tetek"] = "dada", ["tete"] = "dada", ["toket"] = "dada",
+    ["payudara"] = "hati", ["buahdada"] = "hati", ["pantat"] = "belakang", ["bokong"] = "belakang",
+    ["bool"] = "belakang", ["selangkangan"] = "pinggang", ["kelamin"] = "raga", ["zakar"] = "raga",
+    ["vagina"] = "bunga", ["penis"] = "batang", ["ngentot"] = "joget", ["entot"] = "joget",
+    ["ngewe"] = "joget", ["ewe"] = "joget", ["kenthu"] = "joget", ["kimpoi"] = "menikah",
+    ["kawin"] = "menikah", ["peju"] = "keju", ["mani"] = "embun", ["sperma"] = "benih",
+    ["coli"] = "sendiri", ["onani"] = "sendiri", ["masturbasi"] = "melamun",
+    ["desah"] = "napas", ["mendesah"] = "bernapas", ["sange"] = "rindu", ["horni"] = "rindu",
+    ["nafsu"] = "hasrat", ["birahi"] = "hasrat", ["gairah"] = "semangat", ["syahwat"] = "perasaan",
+    ["perawan"] = "gadis", ["keperawanan"] = "kesucian", ["perjaka"] = "jejaka",
+    ["pelacur"] = "penari", ["lonte"] = "bunga", ["psk"] = "pekerja", ["jablay"] = "santai",
+    ["bispak"] = "santai", ["openbo"] = "jalan", ["michat"] = "pesan", ["mucikari"] = "perantara",
+    ["germo"] = "perantara", ["simpanan"] = "rahasia", ["selingkuh"] = "mendua",
+    ["selingkuhan"] = "bayangan", ["pelakor"] = "penggoda", ["pebinor"] = "penggoda",
+    ["telanjang"] = "polos", ["bugil"] = "polos", ["seksi"] = "anggun", ["montok"] = "indah",
+    ["bohay"] = "indah", ["semok"] = "indah", ["bercinta"] = "berdansa", ["seks"] = "cinta",
+    ["seksual"] = "romantis", ["bokep"] = "film", ["mesum"] = "nakal", ["cabul"] = "nakal",
+    ["perkosa"] = "lukai", ["memperkosa"] = "melukai", ["pemerkosaan"] = "kejahatan",
+    ["pelecehan"] = "gangguan", ["mati"] = "pergi", ["matilah"] = "pergilah",
+    ["kematian"] = "kepergian", ["meninggal"] = "berpulang", ["tewas"] = "gugur",
+    ["bunuh"] = "kejar", ["membunuh"] = "mengejar", ["pembunuh"] = "pemburu",
+    ["pembunuhan"] = "perburuan", ["bantai"] = "kalahkan", ["membantai"] = "mengalahkan",
+    ["cekik"] = "pegang", ["mencekik"] = "memegang", ["tikam"] = "sentuh", ["menikam"] = "menyentuh",
+    ["tusuk"] = "sentuh", ["menusuk"] = "menyentuh", ["bacok"] = "tebas", ["membacok"] = "menebas",
+    ["penggal"] = "potong", ["gantung"] = "ayun", ["darah"] = "merah", ["berdarah"] = "terluka",
+    ["mayat"] = "patung", ["jenazah"] = "raga", ["kuburan"] = "taman", ["makam"] = "taman",
+    ["pisau"] = "pedang", ["belati"] = "pedang", ["golok"] = "pedang", ["celurit"] = "sabit",
+    ["senjata"] = "alat", ["peluru"] = "cahaya", ["tembak"] = "bidik", ["menembak"] = "membidik",
+    ["racun"] = "ramuan", ["beracun"] = "berbahaya", ["meracuni"] = "mengganggu",
+    ["mabuk"] = "pusing", ["mabok"] = "pusing", ["teler"] = "lelah", ["miras"] = "sirup",
+    ["alkohol"] = "soda", ["bir"] = "soda", ["anggur"] = "jus", ["tuak"] = "air",
+    ["ciu"] = "air", ["amer"] = "sirup", ["intisar"] = "sirup", ["narkoba"] = "permen",
+    ["narkotika"] = "permen", ["ganja"] = "daun", ["sabu"] = "kristal", ["ekstasi"] = "permen",
+    ["heroin"] = "bubuk", ["kokain"] = "bubuk", ["pil"] = "permen", ["obat"] = "jamu",
+    ["rokok"] = "asap", ["merokok"] = "berasap", ["judi"] = "main", ["berjudi"] = "bermain",
+    ["bandar"] = "penjaga", ["slot"] = "mesin", ["maling"] = "pencari", ["pencuri"] = "pengambil",
+    ["merampok"] = "mengambil", ["korupsi"] = "curang", ["penjara"] = "istana",
+
+    -- Kata Sopan Tapi Rawan Sensor di Roblox (Sentuhan, Romansa, Tempat Privat, Identitas)
+    ["peluk"] = "rengkuh", ["memeluk"] = "merengkuh", ["memelukmu"] = "merengkuhmu",
+    ["pelukan"] = "rengkuhan", ["pelukanmu"] = "rengkuhanmu", ["dipeluk"] = "direngkuh",
+    ["dekap"] = "jaga", ["mendekap"] = "menjaga", ["dekapan"] = "naungan",
+    ["rangkul"] = "gandeng", ["merangkul"] = "menggandeng", ["cium"] = "sapa",
+    ["mencium"] = "menyapa", ["menciummu"] = "menyapamu", ["ciuman"] = "sapaan",
+    ["dicium"] = "disapa", ["kecup"] = "sapa", ["mengecup"] = "menyapa", ["kecupan"] = "sapaan",
+    ["belai"] = "usap", ["membelai"] = "mengusap", ["belaian"] = "usapan",
+    ["sentuh"] = "raih", ["menyentuh"] = "meraih", ["menyentuhmu"] = "meraihmu",
+    ["sentuhan"] = "raihan", ["tersentuh"] = "tergugah", ["raba"] = "cari", ["meraba"] = "mencari",
+    ["pangku"] = "damping", ["memangku"] = "mendampingi", ["pangkuan"] = "sisi",
+    ["gandeng"] = "iring", ["menggandeng"] = "mengiringi", ["elus"] = "usap", ["mengelus"] = "mengusap",
+    ["pacar"] = "rekan", ["pacarku"] = "rekanku", ["pacarmu"] = "rekanmu",
+    ["pacaran"] = "berteman", ["berpacaran"] = "berteman", ["kekasih"] = "pujaan",
+    ["kekasihku"] = "pujaanku", ["kekasihmu"] = "pujaanmu", ["sayang"] = "kasih",
+    ["sayangku"] = "kasihku", ["sayangi"] = "kasihi", ["menyayangi"] = "mengasihi",
+    ["kesayangan"] = "kebanggaan", ["cinta"] = "asa", ["cintaku"] = "asaku", ["cintamu"] = "asamu",
+    ["mencintai"] = "mengagumi", ["mencintaimu"] = "mengagumimu", ["dicintai"] = "dikagumi",
+    ["percintaan"] = "perjalanan", ["asmara"] = "irama", ["kasmaran"] = "bahagia",
+    ["romantis"] = "manis", ["mesra"] = "akrab", ["kemesraan"] = "keakraban",
+    ["bermesraan"] = "bercanda", ["kencan"] = "jalan", ["berkencan"] = "berjalan",
+    ["jadian"] = "bersama", ["gebetan"] = "idola", ["mantan"] = "kenangan",
+    ["mantanku"] = "masa laluku", ["nikah"] = "janji", ["menikah"] = "berjanji",
+    ["menikahimu"] = "menemanimu", ["pernikahan"] = "ikatan", ["pengantin"] = "pasangan",
+    ["suami"] = "pendamping", ["suamiku"] = "pendampingku", ["istri"] = "pendamping",
+    ["istriku"] = "pendampingku", ["jodoh"] = "takdir", ["rayu"] = "bujuk",
+    ["merayu"] = "membujuk", ["rayuan"] = "pujian", ["goda"] = "canda",
+    ["menggoda"] = "bercanda", ["godaan"] = "candaan", ["bibir"] = "senyum",
+    ["bibirmu"] = "senyummu", ["bibirku"] = "senyumku", ["lidah"] = "ucap",
+    ["leher"] = "bahu", ["lehermu"] = "bahumu", ["dada"] = "hati", ["dadamu"] = "hatimu",
+    ["dadaku"] = "hatiku", ["perut"] = "raga", ["pinggang"] = "sisi", ["pinggul"] = "langkah",
+    ["paha"] = "kaki", ["kulit"] = "rona", ["kulitmu"] = "ronamu", ["tubuh"] = "raga",
+    ["tubuhmu"] = "ragamu", ["tubuhku"] = "ragaku", ["badan"] = "raga", ["badanmu"] = "ragamu",
+    ["badanku"] = "ragaku", ["keringat"] = "peluh", ["berkeringat"] = "berpeluh",
+    ["desahan"] = "hembusan", ["napas"] = "hembus", ["napasmu"] = "hembusanmu",
+    ["baju"] = "jubah", ["bajumu"] = "jubahmu", ["celana"] = "pakaian", ["rok"] = "gaun",
+    ["pakaian"] = "busana", ["handuk"] = "kain", ["kamar"] = "ruang", ["kamarmu"] = "ruangmu",
+    ["kamarku"] = "ruangku", ["ranjang"] = "peraduan", ["kasur"] = "alas",
+    ["bantal"] = "sandaran", ["selimut"] = "penghangat", ["guling"] = "sandaran",
+    ["tidur"] = "lelap", ["tidurlah"] = "lelaplah", ["meniduri"] = "menemani",
+    ["ketiduran"] = "terlelap", ["mandi"] = "basuh", ["hotel"] = "gedung",
+    ["penginapan"] = "singgahan", ["kos"] = "tempat", ["kosan"] = "tempat",
+    ["umur"] = "waktu", ["umurmu"] = "waktumu", ["umurku"] = "waktuku", ["usia"] = "masa",
+    ["alamat"] = "arah", ["nomor"] = "angka", ["telepon"] = "suara", ["hp"] = "layar",
+    ["handphone"] = "layar", ["wa"] = "pesan", ["ig"] = "galeri", ["fb"] = "halaman",
+    ["tt"] = "video", ["uang"] = "koin", ["duit"] = "koin", ["bayar"] = "tukar",
+    ["membayar"] = "menukar", ["jual"] = "beri", ["beli"] = "ambil", ["harga"] = "nilai",
     ["murahan"] = "sederhana",
 
-    -- 6. BAHASA INGGRIS: ROMANCE, TOUCH & BODY (SAFE YET CENSORED)
-    ["kiss"] = "greet",
-    ["kisses"] = "smiles",
-    ["kissing"] = "smiling",
-    ["kissed"] = "smiled",
-    ["hug"] = "hold",
-    ["hugs"] = "holds",
-    ["hugging"] = "holding",
-    ["hugged"] = "held",
-    ["cuddle"] = "huddle",
-    ["cuddling"] = "huddling",
-    ["caress"] = "breeze",
-    ["touch"] = "reach",
-    ["touches"] = "reaches",
-    ["touching"] = "reaching",
-    ["touched"] = "reached",
-    ["lips"] = "smile",
-    ["lip"] = "smile",
-    ["tongue"] = "voice",
-    ["neck"] = "shoulder",
-    ["chest"] = "heart",
-    ["waist"] = "side",
-    ["hips"] = "steps",
-    ["hip"] = "step",
-    ["thigh"] = "leg",
-    ["skin"] = "glow",
-    ["body"] = "soul",
-    ["bodies"] = "souls",
-    ["sweat"] = "rain",
-    ["sweating"] = "shining",
-    ["breath"] = "wind",
-    ["breathe"] = "sigh",
-    ["breathing"] = "sighing",
-    ["moan"] = "sigh",
-    ["moaning"] = "sighing",
-    ["whisper"] = "echo",
-    ["undress"] = "unwind",
-    ["clothes"] = "outfit",
-    ["shirt"] = "jacket",
-    ["pants"] = "shoes",
-    ["skirt"] = "dress",
-    ["underwear"] = "gear",
-    ["bra"] = "top",
-    ["panties"] = "gear",
-    ["bikini"] = "swimsuit",
-    ["bed"] = "cloud",
-    ["bedroom"] = "room",
-    ["sheets"] = "clouds",
-    ["pillow"] = "cushion",
-    ["blanket"] = "cover",
-    ["shower"] = "rain",
-    ["hotel"] = "tower",
-    ["motel"] = "tower",
-    ["boyfriend"] = "partner",
-    ["girlfriend"] = "partner",
-    ["lover"] = "dreamer",
-    ["lovers"] = "dreamers",
-    ["dating"] = "hanging",
-    ["date"] = "meet",
-    ["marry"] = "promise",
-    ["married"] = "promised",
-    ["wedding"] = "party",
-    ["husband"] = "partner",
-    ["wife"] = "partner",
-    ["bride"] = "star",
-    ["groom"] = "star",
-    ["babe"] = "star",
-    ["baby"] = "darling", -- kadang "baby" aman, tapi jika digabung kata lain sering kena sensor
-    ["honey"] = "sweetie",
-    ["sugar"] = "sweet",
-    ["shawty"] = "shorty",
-    ["shorty"] = "friend",
-    ["daddy"] = "boss",
-    ["mommy"] = "queen",
-    ["crush"] = "spark",
-    ["flirt"] = "tease",
-    ["flirting"] = "joking",
-    ["seduce"] = "charm",
-    ["jealous"] = "envious",
-    ["cheating"] = "lying",
-    ["cheat"] = "trick",
-    ["ex"] = "past"
-    -- ================= 3. BAHASA INGGRIS: KEKERASAN, DARAH & SENJATA =================
-    ["suicidal"] = "hopeless",
-    ["suicide"] = "give up",
-    ["kms"] = "sigh",
-    ["kys"] = "bye",
-    ["killing"] = "chilling",
-    ["killed"] = "chilled",
-    ["killer"] = "hunter",
-    ["kills"] = "chills",
-    ["kill"] = "chill",
-    ["murderer"] = "stranger",
-    ["murdered"] = "vanished",
-    ["murdering"] = "chasing",
-    ["murder"] = "mystery",
-    ["homicide"] = "incident",
-    ["genocide"] = "wipeout",
-    ["massacre"] = "chaos",
-    ["slaughter"] = "defeat",
-    ["butcher"] = "fighter",
-    ["dying"] = "fading",
-    ["died"] = "faded",
-    ["dies"] = "fades",
-    ["die"] = "fly",
-    ["dead"] = "gone",
-    ["death"] = "sleep",
-    ["corpse"] = "statue",
-    ["coffin"] = "box",
-    ["grave"] = "ground",
-    ["bleeding"] = "crying",
-    ["bleed"] = "cry",
-    ["bloody"] = "messy",
-    ["blood"] = "sweat",
-    ["gore"] = "mess",
-    ["stabbed"] = "poked",
-    ["stabbing"] = "poking",
-    ["stab"] = "poke",
-    ["slit"] = "cut",
-    ["choke"] = "gasp",
-    ["choking"] = "gasping",
-    ["strangle"] = "grab",
-    ["hang"] = "hold",
-    ["hanged"] = "held",
-    ["shoot"] = "blast",
-    ["shooting"] = "blasting",
-    ["shotgun"] = "blaster",
-    ["gunshot"] = "thunder",
-    ["guns"] = "blasters",
-    ["gun"] = "blaster",
-    ["pistol"] = "blaster",
-    ["rifle"] = "blaster",
-    ["glock"] = "blaster",
-    ["ak47"] = "blaster",
-    ["bullets"] = "sparks",
-    ["bullet"] = "spark",
-    ["trigger"] = "switch",
-    ["bomb"] = "boom",
-    ["terrorist"] = "villain",
-    ["terrorism"] = "chaos",
-    ["hostage"] = "captive",
-    ["torture"] = "trouble",
-    ["abuse"] = "mistreat",
-    ["violent"] = "wild",
-    ["violence"] = "chaos",
-
-    -- ================= 4. BAHASA INGGRIS: DEWASA, ROMANSA EKSTREM & ALKOHOL/OBAT =================
-    ["sexual"] = "romantic",
-    ["sexually"] = "deeply",
-    ["sex"] = "love",
-    ["sexy"] = "lovely",
-    ["sexiest"] = "loveliest",
-    ["porn"] = "movie",
-    ["porno"] = "movie",
-    ["hentai"] = "anime",
-    ["nsfw"] = "secret",
-    ["nude"] = "bare",
-    ["nudes"] = "photos",
-    ["naked"] = "bare",
-    ["horny"] = "lonely",
-    ["orgasm"] = "climax",
-    ["climax"] = "peak",
-    ["cum"] = "come",
-    ["cumming"] = "coming",
-    ["sperm"] = "seed",
-    ["erection"] = "rising",
-    ["boner"] = "spark",
-    ["boobs"] = "chest",
-    ["boob"] = "chest",
-    ["titties"] = "chest",
-    ["tits"] = "chest",
-    ["tit"] = "chest",
-    ["nipples"] = "buttons",
-    ["nipple"] = "button",
-    ["booty"] = "hips",
-    ["thighs"] = "legs",
-    ["virgin"] = "innocent",
-    ["virginity"] = "innocence",
-    ["lust"] = "desire",
-    ["fetish"] = "habit",
-    ["kinky"] = "quirky",
-    ["bdsm"] = "chains",
-    ["rape"] = "hurt",
-    ["raped"] = "hurt",
-    ["rapist"] = "villain",
-    ["molest"] = "bother",
-    ["pedophile"] = "creep",
-    ["pedo"] = "creep",
-    ["incest"] = "kin",
-    ["drugs"] = "sweets",
-    ["drug"] = "candy",
-    ["weed"] = "herb",
-    ["marijuana"] = "herbs",
-    ["cannabis"] = "herbs",
-    ["blunt"] = "stick",
-    ["joint"] = "roll",
-    ["stoned"] = "sleepy",
-    ["cocaine"] = "powder",
-    ["coke"] = "soda",
-    ["heroin"] = "potion",
-    ["meth"] = "crystal",
-    ["ecstasy"] = "joy",
-    ["molly"] = "candy",
-    ["lsd"] = "dream",
-    ["acid"] = "lemon",
-    ["pills"] = "mints",
-    ["pill"] = "mint",
-    ["overdose"] = "overload",
-    ["addict"] = "fan",
-    ["addicted"] = "hooked",
-    ["nicotine"] = "caffeine",
-    ["cigarette"] = "candle",
-    ["cigarettes"] = "candles",
-    ["vape"] = "mist",
-    ["smoking"] = "glowing",
-    ["smoke"] = "cloud",
-    ["drunk"] = "dizzy",
-    ["wasted"] = "tired",
-    ["tipsy"] = "giggly",
-    ["alcohol"] = "soda",
-    ["liquor"] = "juice",
-    ["whiskey"] = "tea",
-    ["vodka"] = "water",
-    ["tequila"] = "lemonade",
-    ["beer"] = "rootbeer",
-    ["wine"] = "grape",
-    ["champagne"] = "sparkling",
-    ["bartender"] = "barista",
-
-    -- ================= 5. BAHASA INDONESIA: UMPATAN, HEWAN & KASAR =================
-    ["anjing"] = "kucing",
-    ["anjir"] = "astaga",
-    ["anjay"] = "keren",
-    ["anjrit"] = "waduh",
-    ["anjrot"] = "waduh",
-    ["anying"] = "kucing",
-    ["njir"] = "wah",
-    ["njay"] = "keren",
-    ["asu"] = "kucing",
-    ["babi"] = "kelinci",
-    ["celeng"] = "kelinci",
-    ["monyet"] = "kera",
-    ["kunyuk"] = "kera",
-    ["kampret"] = "kelelawar",
-    ["bangsat"] = "nakal",
-    ["bgst"] = "nakal",
-    ["brengsek"] = "bandel",
-    ["bajingan"] = "penjahat",
-    ["keparat"] = "nakal",
-    ["bedebah"] = "bandel",
-    ["kurangajar"] = "nakal",
-    ["sialan"] = "aduhai",
-    ["sial"] = "malang",
-    ["bangke"] = "bangkai",
-    ["bangkai"] = "ranting",
-    ["tai"] = "debu",
-    ["tahi"] = "debu",
-    ["taik"] = "debu",
-    ["berak"] = "pergi",
-    ["kentut"] = "angin",
-    ["kencing"] = "air",
-    ["bacot"] = "bicara",
-    ["bct"] = "bicara",
-    ["cocot"] = "mulut",
-    ["congost"] = "mulut",
-    ["congor"] = "mulut",
-    ["nyinyir"] = "cerewet",
-    ["mampus"] = "habis",
-    ["modar"] = "habis",
-    ["kojor"] = "lemas",
-    ["matek"] = "lemas",
-    ["setan"] = "bayangan",
-    ["syaiton"] = "bayangan",
-    ["iblis"] = "bayangan",
-    ["dajjal"] = "raksasa",
-    ["neraka"] = "lembah",
-    ["jahanam"] = "gelap",
-    ["laknat"] = "buruk",
-    ["terkutuk"] = "terlupakan",
-    ["haram"] = "terlarang",
-    ["dosa"] = "salah",
-    ["berdosa"] = "bersalah",
-    ["kafir"] = "asing",
-
-    -- ================= 6. BAHASA INDONESIA: HINAAN FISIK / MENTAL & SLANG DAERAH =================
-    ["goblok"] = "polos",
-    ["goblog"] = "polos",
-    ["gblk"] = "polos",
-    ["tolol"] = "lucu",
-    ["tll"] = "lucu",
-    ["bodoh"] = "polos",
-    ["bego"] = "lugu",
-    ["begok"] = "lugu",
-    ["oon"] = "lugu",
-    ["bloon"] = "lugu",
-    ["dungu"] = "polos",
-    ["idiot"] = "unik",
-    ["autis"] = "fokus",
-    ["cacat"] = "kurang",
-    ["gila"] = "heboh",
-    ["sinting"] = "heboh",
-    ["sarap"] = "heboh",
-    ["edan"] = "heboh",
-    ["stres"] = "pusing",
-    ["depresi"] = "sedih",
-    ["frustrasi"] = "kecewa",
-    ["budek"] = "kurang dengar",
-    ["buta"] = "gelap",
-    ["bisu"] = "diam",
-    ["pincang"] = "pelan",
-    ["gendut"] = "gemoy",
-    ["gembrot"] = "gemoy",
-    ["ceking"] = "ramping",
-    ["jelek"] = "biasa",
-    ["burik"] = "pudar",
-    ["dekil"] = "lusuh",
-    ["miskin"] = "sederhana",
-    ["melarat"] = "sederhana",
-    ["gembel"] = "pengembara",
-    ["pengemis"] = "pencari",
-    ["sampah"] = "dedaunan",
-    ["pecundang"] = "pemula",
-    ["cupu"] = "pemula",
-    ["noob"] = "pemula",
-    ["jancok"] = "astaga",
-    ["jancuk"] = "astaga",
-    ["dancok"] = "astaga",
-    ["cuk"] = "kawan",
-    ["cok"] = "kawan",
-    ["jangkrik"] = "belalang",
-    ["matamu"] = "matanya",
-    ["ndasmu"] = "kepalamu",
-    ["lambemu"] = "ucapanmu",
-    ["raimu"] = "wajahmu",
-    ["pantek"] = "waduh",
-    ["pante"] = "pantai",
-    ["kimak"] = "astaga",
-    ["pukimak"] = "astaga",
-    ["puki"] = "kucing",
-    ["sundal"] = "nakal",
-    ["bujang"] = "pemuda",
-
-    -- ================= 7. BAHASA INDONESIA: DEWASA, ANATOMI & VULGAR =================
-    ["kontol"] = "konyol",
-    ["kntl"] = "konyol",
-    ["memek"] = "bebek",
-    ["mmk"] = "bebek",
-    ["pepek"] = "bebek",
-    ["jembut"] = "rambut",
-    ["jmbt"] = "rambut",
-    ["itil"] = "kecil",
-    ["pentil"] = "ujung",
-    ["tetek"] = "dada",
-    ["tete"] = "dada",
-    ["toket"] = "dada",
-    ["payudara"] = "dada",
-    ["buahdada"] = "dada",
-    ["pantat"] = "belakang",
-    ["bokong"] = "belakang",
-    ["bool"] = "belakang",
-    ["paha"] = "kaki",
-    ["selangkangan"] = "pinggang",
-    ["kelamin"] = "raga",
-    ["zakar"] = "raga",
-    ["vagina"] = "bunga",
-    ["penis"] = "batang",
-    ["ngentot"] = "joget",
-    ["entot"] = "joget",
-    ["ngewe"] = "joget",
-    ["ewe"] = "joget",
-    ["kenthu"] = "joget",
-    ["kimpoi"] = "menikah",
-    ["kawin"] = "menikah",
-    ["peju"] = "keju",
-    ["mani"] = "embun",
-    ["sperma"] = "benih",
-    ["coli"] = "sendiri",
-    ["onani"] = "sendiri",
-    ["masturbasi"] = "melamun",
-    ["desah"] = "napas",
-    ["mendesah"] = "bernapas",
-    ["sange"] = "rindu",
-    ["horni"] = "rindu",
-    ["nafsu"] = "hasrat",
-    ["birahi"] = "hasrat",
-    ["gairah"] = "semangat",
-    ["syahwat"] = "perasaan",
-    ["perawan"] = "gadis",
-    ["keperawanan"] = "kesucian",
-    ["perjaka"] = "jejaka",
-    ["pelacur"] = "penari",
-    ["lonte"] = "bunga",
-    ["PSK"] = "pekerja",
-    ["psk"] = "pekerja",
-    ["jablay"] = "santai",
-    ["bispak"] = "santai",
-    ["openbo"] = "jalan",
-    ["michat"] = "pesan",
-    ["mucikari"] = "perantara",
-    ["germo"] = "perantara",
-    ["simpanan"] = "rahasia",
-    ["selingkuh"] = "mendua",
-    ["selingkuhan"] = "bayangan",
-    ["pelakor"] = "penggoda",
-    ["pebinor"] = "penggoda",
-    ["telanjang"] = "polos",
-    ["bugil"] = "polos",
-    ["buka-bukaan"] = "terbuka",
-    ["seksi"] = "anggun",
-    ["montok"] = "indah",
-    ["bohay"] = "indah",
-    ["semok"] = "indah",
-    ["bercinta"] = "berdansa",
-    ["seks"] = "cinta",
-    ["seksual"] = "romantis",
-    ["bokep"] = "film",
-    ["mesum"] = "nakal",
-    ["cabul"] = "nakal",
-    ["perkosa"] = "lukai",
-    ["memperkosa"] = "melukai",
-    ["pemerkosaan"] = "kejahatan",
-    ["pelecehan"] = "gangguan",
-    ["ciuman"] = "senyuman",
-    ["cium"] = "senyum",
-    ["mencium"] = "menyapa",
-    ["bibir"] = "senyum",
-    ["peluk"] = "dekap",
-    ["memeluk"] = "mendekap",
-    ["ranjang"] = "tempat",
-    ["kasur"] = "bantal",
-    ["kamar"] = "ruang",
-
-    -- ================= 8. BAHASA INDONESIA: KEKERASAN, KRIMINAL & ZAT TERLARANG =================
-    ["mati"] = "pergi",
-    ["matilah"] = "pergilah",
-    ["kematian"] = "kepergian",
-    ["meninggal"] = "berpulang",
-    ["tewas"] = "gugur",
-    ["bunuh"] = "kejar",
-    ["membunuh"] = "mengejar",
-    ["pembunuh"] = "pemburu",
-    ["pembunuhan"] = "perburuan",
-    ["bantai"] = "kalahkan",
-    ["membantai"] = "mengalahkan",
-    ["cekik"] = "pegang",
-    ["mencekik"] = "memegang",
-    ["tikam"] = "sentuh",
-    ["menikam"] = "menyentuh",
-    ["tusuk"] = "sentuh",
-    ["menusuk"] = "menyentuh",
-    ["bacok"] = "tebas",
-    ["membacok"] = "menebas",
-    ["penggal"] = "potong",
-    ["gantung"] = "ayun",
-    ["darah"] = "merah",
-    ["berdarah"] = "terluka",
-    ["mayat"] = "patung",
-    ["jenazah"] = "raga",
-    ["kuburan"] = "taman",
-    ["makam"] = "taman",
-    ["pisau"] = "pedang",
-    ["belati"] = "pedang",
-    ["golok"] = "pedang",
-    ["celurit"] = "sabit",
-    ["senjata"] = "alat",
-    ["peluru"] = "cahaya",
-    ["tembak"] = "bidik",
-    ["menembak"] = "membidik",
-    ["racun"] = "ramuan",
-    ["beracun"] = "berbahaya",
-    ["meracuni"] = "mengganggu",
-    ["mabuk"] = "pusing",
-    ["mabok"] = "pusing",
-    ["teler"] = "lelah",
-    ["miras"] = "sirup",
-    ["alkohol"] = "soda",
-    ["bir"] = "soda",
-    ["anggur"] = "jus",
-    ["tuak"] = "air",
-    ["ciu"] = "air",
-    ["amer"] = "sirup",
-    ["intisar"] = "sirup",
-    ["narkoba"] = "permen",
-    ["narkotika"] = "permen",
-    ["ganja"] = "daun",
-    ["sabu"] = "kristal",
-    ["ekstasi"] = "permen",
-    ["heroin"] = "bubuk",
-    ["kokain"] = "bubuk",
-    ["pil"] = "permen",
-    ["obat"] = "jamu",
-    ["rokok"] = "asap",
-    ["merokok"] = "berasap",
-    ["judi"] = "main",
-    ["berjudi"] = "bermain",
-    ["bandar"] = "penjaga",
-    ["slot"] = "mesin",
-    ["maling"] = "pencari",
-    ["pencuri"] = "pengambil",
-    ["merampok"] = "mengambil",
-    ["korupsi"] = "curang",
-    ["penjara"] = "istana",
-
-    -- ================= 9. NAMA PLATFORM & TRIGGER MODERASI ROBLOX (OFF-SITE LINKS) =================
-    -- Roblox sering menyensor satu kalimat penuh jika mendeteksi nama aplikasi luar
-    ["discord"] = "radio",
-    ["tiktok"] = "clock",
-    ["instagram"] = "camera",
-    ["whatsapp"] = "phone",
-    ["telegram"] = "letter",
-    ["youtube"] = "video",
-    ["twitter"] = "bird",
-    ["facebook"] = "book",
-    ["snapchat"] = "ghost",
-    ["tinder"] = "flame",
-    ["onlyfans"] = "fanclub",
-    ["spotify"] = "music"
-
+    -- Platform Sosmed
+    ["discord"] = "radio", ["tiktok"] = "clock", ["instagram"] = "camera",
+    ["whatsapp"] = "phone", ["telegram"] = "letter", ["youtube"] = "video",
+    ["twitter"] = "bird", ["facebook"] = "book", ["snapchat"] = "ghost",
+    ["tinder"] = "flame", ["onlyfans"] = "fanclub", ["spotify"] = "music"
 }
 
 local function matchCase(original, replacement)
+    if replacement == "" then return "" end
     if original == original:upper() and #original > 1 then
         return replacement:upper()
     elseif original:sub(1, 1) == original:sub(1, 1):upper() then
@@ -878,16 +373,57 @@ local function sanitizeLyricText(text)
         return text
     end
 
-    local cleaned = text:gsub("([%a']+)", function(word)
+    local cleaned = text
+
+    for _, pair in ipairs(phraseReplacements) do
+        local badPhrase, goodPhrase = pair[1], pair[2]
+        local pattern = badPhrase:gsub("(%a)", function(c)
+            return string.format("[%s%s]", c:lower(), c:upper())
+        end)
+        cleaned = cleaned:gsub(pattern, goodPhrase)
+    end
+
+    cleaned = cleaned:gsub("([%a'*%-]+)", function(word)
         local lowerWord = word:lower()
-        local rep = wordReplacements[lowerWord]
-        if rep then
-            return matchCase(word, rep)
+
+        if lowerWord:find("%*") then
+            if lowerWord:match("^f.*k$") then return matchCase(word, "freak") end
+            if lowerWord:match("^s.*t$") then return matchCase(word, "shoot") end
+            if lowerWord:match("^b.*h$") then return matchCase(word, "witch") end
+            if lowerWord:match("^n.*a$") or lowerWord:match("^n.*r$") then return matchCase(word, "homie") end
+            if lowerWord:match("^c.*t$") then return matchCase(word, "jerk") end
+            if lowerWord:match("^d.*k$") then return matchCase(word, "jerk") end
+            return word:gsub("%*", "")
         end
+
+        if wordReplacements[lowerWord] then
+            return matchCase(word, wordReplacements[lowerWord])
+        end
+
         local stripped = lowerWord:gsub("'", "")
         if wordReplacements[stripped] then
             return matchCase(word, wordReplacements[stripped])
         end
+
+        if lowerWord:find("%-") then
+            local parts = string.split(word, "-")
+            for i, p in ipairs(parts) do
+                local lp = p:lower():gsub("'", "")
+                if wordReplacements[lp] then
+                    parts[i] = matchCase(p, wordReplacements[lp])
+                end
+            end
+            return table.concat(parts, "-")
+        end
+
+        local root, suffix = stripped:match("^([%a]+)(nya)$")
+        if not root then root, suffix = stripped:match("^([%a]+)(mu)$") end
+        if not root then root, suffix = stripped:match("^([%a]+)(ku)$") end
+        if not root then root, suffix = stripped:match("^([%a]+)(lah)$") end
+        if root and wordReplacements[root] then
+            return matchCase(word, wordReplacements[root] .. suffix)
+        end
+
         return word
     end)
 
@@ -1226,7 +762,6 @@ local status = makeLabel(topBar, "Status", UDim2.new(0, 10, 0, 20), UDim2.new(1,
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextTruncate = Enum.TextTruncate.AtEnd
 
--- Tombol Kontrol Header (🎥 Orbit, ⚙ Orbit Setting, 📺 Subtitle, 🔊 Mute, 🎵 Pill, — Minimize, × Close)
 local orbitBtn = makeButton(topBar, "🎥", UDim2.new(1, -218, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
 local orbitCfgBtn = makeButton(topBar, "⚙", UDim2.new(1, -188, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
 local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -158, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
@@ -1307,7 +842,6 @@ local function createOrbitSettingRow(yPos, labelText, formatStr, getVal, setVal,
     end)
 end
 
--- Baris Pengaturan Orbit (Jarak, Tinggi, Kecepatan, Fokus Y, FOV)
 createOrbitSettingRow(78,  "Jarak (Stud):",    "%.1f",  function() return orbitDistance end,   function(v) orbitDistance = v end,   0.5,  2.0,  60.0)
 createOrbitSettingRow(110, "Ketinggian (Y):",  "%.1f",  function() return orbitHeight end,     function(v) orbitHeight = v end,     0.5, -10.0, 35.0)
 createOrbitSettingRow(142, "Kecepatan Putar:", "%.2fx", function() return orbitSpeed end,      function(v) orbitSpeed = v end,      0.05, 0.0,  5.0)
@@ -1333,7 +867,7 @@ orbitResetBtn.MouseButton1Click:Connect(function()
     for _, fn in ipairs(orbitUiUpdaters) do fn() end
 end)
 
--- ======================== MINI LYRIC BAR (Tampil Saat Minimize) ========================
+-- ======================== MINI LYRIC BAR ========================
 local miniBar = Instance.new("Frame")
 miniBar.Name = "MiniBar"
 miniBar.Position = UDim2.new(0, 10, 0, 44)
@@ -1393,7 +927,6 @@ end)
 
 local searchBtn = makeButton(body, "CARI", UDim2.new(1, -64, 0, 4), UDim2.new(0, 52, 0, 32), Color3.fromRGB(30, 160, 95))
 
--- Daftar Hasil Pencarian
 local resultsFrame = Instance.new("ScrollingFrame")
 resultsFrame.Position = UDim2.new(0, 12, 0, 42)
 resultsFrame.Size = UDim2.new(1, -24, 0, 64)
@@ -1408,7 +941,6 @@ local resultLayout = Instance.new("UIListLayout", resultsFrame)
 resultLayout.Padding = UDim.new(0, 4)
 resultLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
--- Area Lirik Utama
 local lyricCard = Instance.new("TextButton")
 lyricCard.Name = "LyricCard"
 lyricCard.Position = UDim2.new(0, 12, 0, 112)
@@ -1432,7 +964,6 @@ lyricCard.MouseButton1Click:Connect(function()
     end
 end)
 
--- ======================== PROGRESS BAR LAGU & WAKTU REAL-TIME ========================
 local timeCurrentLbl = makeLabel(body, "TimeCurrent", UDim2.new(0, 12, 0, 213), UDim2.new(0, 42, 0, 16), "00:00", 10, Color3.fromRGB(165, 175, 185))
 timeCurrentLbl.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -1456,11 +987,9 @@ Instance.new("UICorner", progBarFill).CornerRadius = UDim.new(1, 0)
 local timeTotalLbl = makeLabel(body, "TimeTotal", UDim2.new(1, -54, 0, 213), UDim2.new(0, 42, 0, 16), "00:00", 10, Color3.fromRGB(165, 175, 185))
 timeTotalLbl.TextXAlignment = Enum.TextXAlignment.Right
 
--- Informasi Sinkronisasi
 local syncInfo = makeLabel(body, "SyncInfo", UDim2.new(0, 12, 0, 234), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(30, 230, 135))
 syncInfo.TextXAlignment = Enum.TextXAlignment.Center
 
--- Kontrol Kecepatan & Offset
 local slowerBtn = makeButton(body, "−", UDim2.new(0, 12, 0, 256), UDim2.new(0, 38, 0, 32))
 slowerBtn.TextSize = 16
 local speedBtn = makeButton(body, "1.00x", UDim2.new(0, 54, 0, 256), UDim2.new(0, 68, 0, 32))
@@ -1470,7 +999,6 @@ fasterBtn.TextSize = 16
 local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 172, 0, 256), UDim2.new(0, 74, 0, 32))
 local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 252, 0, 256), UDim2.new(0, 76, 0, 32))
 
--- Baris Bawah: Auto Sync, Safe Filter, & Auto-Chat
 local resetSyncBtn = makeButton(body, "🔄 SYNC", UDim2.new(0, 12, 0, 296), UDim2.new(0, 92, 0, 32), Color3.fromRGB(52, 62, 74))
 local filterBtn = makeButton(body, "🛡 Filter: ON", UDim2.new(0, 110, 0, 296), UDim2.new(0, 102, 0, 32), Color3.fromRGB(30, 145, 90))
 local chatBtn = makeButton(body, "💬 Chat: OFF", UDim2.new(0, 218, 0, 296), UDim2.new(0, 110, 0, 32), Color3.fromRGB(39, 45, 51))
@@ -1478,7 +1006,6 @@ local chatBtn = makeButton(body, "💬 Chat: OFF", UDim2.new(0, 218, 0, 296), UD
 local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 336), UDim2.new(1, -24, 0, 20), "🎥: Orbit  |  ⚙: Setting Orbit  |  📺: Subtitle  |  🛡: Sensor", 10, Color3.fromRGB(130, 138, 150))
 
 -- ======================== LOGIKA TOMBOL & FITUR ========================
-
 local function resetCameraToNormal()
     local cam = workspace.CurrentCamera
     local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
@@ -1506,7 +1033,6 @@ local function toggleOrbitState()
     updateOrbitButtonVisuals()
 end
 
--- 0A. Tombol Kamera Drone Orbit (🎥) & Panel Pengaturan Orbit (⚙)
 orbitBtn.MouseButton1Click:Connect(toggleOrbitState)
 orbitToggleInsideBtn.MouseButton1Click:Connect(toggleOrbitState)
 
@@ -1520,14 +1046,12 @@ closeOrbitPanelBtn.MouseButton1Click:Connect(function()
     orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(39, 45, 55)
 end)
 
--- 0B. Tombol Subtitle HUD Mengambang (📺)
 subToggleBtn.MouseButton1Click:Connect(function()
     isSubtitleEnabled = not isSubtitleEnabled
     subtitleFrame.Visible = isSubtitleEnabled
     subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(30, 150, 90) or Color3.fromRGB(39, 45, 55)
 end)
 
--- 1. Tombol Minimize (Mode Compact vs Mode Penuh)
 minBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
@@ -1543,7 +1067,6 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 2. Tombol Mode Floating Icon (🎵)
 pillModeBtn.MouseButton1Click:Connect(function()
     main.Visible = false
     orbitPanel.Visible = false
@@ -1556,7 +1079,6 @@ floatBtn.MouseButton1Click:Connect(function()
     main.Visible = true
 end)
 
--- 3. Tombol Mute Audio Lokal (🔊)
 muteBtn.MouseButton1Click:Connect(function()
     isMutedLocally = not isMutedLocally
     muteBtn.Text = isMutedLocally and "🔇" or "🔊"
@@ -1571,7 +1093,6 @@ muteBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 4. Tombol Close (×)
 closeBtn.MouseButton1Click:Connect(function()
     if isMutedLocally and activeSound then
         activeSound.Volume = originalVolume
@@ -1583,7 +1104,6 @@ closeBtn.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
--- 5. Sinkronisasi & Kecepatan Tanpa Batas 2x
 local function updateSyncText()
     local modeTag = isAutoRatioActive and " (Auto)" or ""
     syncInfo.Text = string.format("Kecepatan: %.2fx%s   •   Offset: %+.2fs", lyricSpeed, modeTag, syncOffset)
@@ -1655,7 +1175,6 @@ resetSyncBtn.MouseButton1Click:Connect(function()
 end)
 updateSyncText()
 
--- Toggle Filter Kata Aman & Auto-Chat
 local function updateDisplayedLyric(prevTxt, currTxt, nextTxt)
     local sPrev = sanitizeLyricText(prevTxt or "")
     local sCurr = sanitizeLyricText(currTxt or "")
@@ -1692,8 +1211,6 @@ chatBtn.MouseButton1Click:Connect(function()
     chatBtn.Text = "💬 Chat: " .. (autoChat and "ON" or "OFF")
     chatBtn.BackgroundColor3 = autoChat and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(39, 45, 51)
 end)
-
--- ======================== PENCARIAN & HASIL ========================
 
 local resultButtons = {}
 
@@ -1799,8 +1316,6 @@ searchBox.FocusLost:Connect(function(enterPressed)
         doSearch(searchBox.Text, {cleanSongName(searchBox.Text)})
     end
 end)
-
--- ======================== DETEKSI LAGU OTOMATIS ========================
 
 local function getInGameMusicGuiTitle()
     local guiTitle, guiArtist = "", ""
@@ -1913,7 +1428,6 @@ task.spawn(function()
     end
 end)
 
--- ======================== EFEK KAMERA DRONE ORBIT KUSTOM (RENDERSTEPPED) ========================
 RunService.RenderStepped:Connect(function(dt)
     if not gui.Parent then return end
 
@@ -1942,7 +1456,6 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- ======================== SINKRONISASI & PROGRESS BAR REAL-TIME ========================
 RunService.Heartbeat:Connect(function()
     if not gui.Parent or not activeSound or not activeSound.IsPlaying then return end
 
@@ -2006,9 +1519,9 @@ end)
 pcall(function()
     StarterGui:SetCore("SendNotification", {
         Title = "Koplingtify Lite",
-        Text = "Custom Orbit Cam & Safe Filter siap!",
+        Text = "Berhasil dimuat!",
         Duration = 3
     })
 end)
 
-print("Koplingtify Lite (Custom Orbit Settings + Safe Filter) loaded.")
+print("Koplingtify Lite (Full Integrated) loaded.")
