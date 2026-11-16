@@ -1,7 +1,7 @@
--- KOPLINGTIFY LITE (SAFE WORD FILTER + ORBIT CAMERA EDITION)
+-- KOPLINGTIFY LITE (CUSTOM ORBIT CAMERA + SAFE WORD FILTER EDITION)
 -- Fitur: Auto-Sync durasi lagu, tanpa batas max speed 2x, Auto-Search pergantian lagu,
 -- UI Android ramah sentuh, Minimize, Floating Icon, Subtitle Transparan (HUD), Progress Bar,
--- Deteksi & Pengganti Kata Diblokir Roblox (Safe Lyrics), & Efek Kamera Drone Orbit.
+-- Deteksi & Pengganti Kata Diblokir Roblox (Safe Lyrics), & Kamera Drone Orbit Full Setting.
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -34,13 +34,22 @@ local autoChat = false
 local safeFilterEnabled = true
 local isMutedLocally = false
 local isSubtitleEnabled = false
-local isOrbitEnabled = false
-local wasOrbitCam = false
-local orbitAngle = 0
 local originalVolume = 0.5
 local lastSentLine = ""
 local scanToken = 0
 local isMinimized = false
+
+-- State & Konfigurasi Kamera Orbit
+local isOrbitEnabled = false
+local wasOrbitCam = false
+local orbitAngle = 0
+local orbitDistance = 10.0   -- Jarak kamera dari karakter (studs)
+local orbitHeight = 3.5      -- Ketinggian kamera (studs)
+local orbitSpeed = 0.55      -- Kecepatan putar (rad/detik)
+local orbitLookHeight = 1.0  -- Titik fokus ketinggian pada karakter
+local orbitFOV = 70          -- Field of View kamera saat orbit
+local orbitDirection = 1     -- 1 = Kanan (Searah), -1 = Kiri (Berlawanan)
+local savedDefaultFOV = (workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView) or 70
 
 local FULL_SIZE = UDim2.new(0, 340, 0, 420)
 local MINI_SIZE = UDim2.new(0, 340, 0, 94)
@@ -65,117 +74,550 @@ local function formatTime(seconds)
 end
 
 -- ======================== KAMUS FILTER KATA AMAN ROBLOX ========================
--- Mengganti kata-kata yang sering terblokir (###) di Roblox dengan kata yang lebih sopan
 local wordReplacements = {
-    -- Bahasa Inggris
+    -- ================= 1. BAHASA INGGRIS: UMPATAN & SLANG KASAR =================
     ["motherfucker"] = "troublemaker",
+    ["motherfuckers"] = "troublemakers",
     ["motherfuckin"] = "freakin",
     ["motherfucking"] = "freaking",
+    ["muthafucka"] = "troublemaker",
+    ["muthafuckin"] = "freakin",
+    ["mf"] = "pal",
     ["fucking"] = "freaking",
     ["fuckin"] = "freakin",
+    ["fckin"] = "freakin",
+    ["fcking"] = "freaking",
     ["fucked"] = "messed",
     ["fucker"] = "joker",
+    ["fuckers"] = "jokers",
     ["fuck"] = "freak",
+    ["fucks"] = "cares",
+    ["fck"] = "freak",
+    ["fuk"] = "freak",
+    ["fuq"] = "freak",
+    ["wtf"] = "what",
+    ["stfu"] = "shh",
     ["shitting"] = "kidding",
+    ["shitty"] = "messy",
     ["bullshit"] = "nonsense",
+    ["horseshit"] = "nonsense",
+    ["dipshit"] = "goofball",
+    ["shithead"] = "airhead",
+    ["shits"] = "shoots",
     ["shit"] = "shoot",
+    ["sht"] = "shoot",
+    ["bitching"] = "complaining",
     ["bitches"] = "witches",
+    ["bitchy"] = "sassy",
     ["bitch"] = "witch",
+    ["btch"] = "witch",
+    ["biatch"] = "witch",
+    ["assholes"] = "rascals",
     ["asshole"] = "rascal",
+    ["dumbass"] = "silly",
+    ["jackass"] = "clown",
+    ["badass"] = "cool",
+    ["fatass"] = "heavy",
+    ["asses"] = "butts",
     ["ass"] = "butt",
+    ["arse"] = "butt",
+    ["bastards"] = "rascals",
     ["bastard"] = "rascal",
+    ["dammit"] = "darnit",
+    ["damned"] = "darned",
     ["damn"] = "darn",
+    ["goddammit"] = "goshdarn",
     ["goddamn"] = "goshdarn",
+    ["hella"] = "super",
     ["hell"] = "heck",
+    ["cunts"] = "jerks",
     ["cunt"] = "jerk",
+    ["dicks"] = "jerks",
+    ["dickhead"] = "blockhead",
     ["dick"] = "jerk",
+    ["cocks"] = "roosters",
     ["cock"] = "rooster",
+    ["pussies"] = "kitties",
     ["pussy"] = "kitty",
-    ["whore"] = "player",
+    ["twat"] = "fool",
+    ["prick"] = "thorn",
+    ["wanker"] = "joker",
+    ["bollocks"] = "nonsense",
+    ["bugger"] = "rascal",
+    ["douchebag"] = "showoff",
+    ["douche"] = "showoff",
+    ["scumbag"] = "villain",
+    ["slutty"] = "flirty",
+    ["sluts"] = "heartbreakers",
     ["slut"] = "heartbreaker",
+    ["whores"] = "players",
+    ["whore"] = "player",
+    ["hoe"] = "player",
+    ["hoes"] = "players",
+    ["skank"] = "meanie",
+    ["prostitute"] = "dancer",
+    ["stripper"] = "dancer",
+    ["hooker"] = "dancer",
+    ["pimp"] = "boss",
+
+    -- ================= 2. BAHASA INGGRIS: RASIAL & DISKRIMINASI =================
     ["nigga"] = "homie",
-    ["nigger"] = "brother",
     ["niggas"] = "homies",
-    ["faggot"] = "loser",
+    ["niggaz"] = "homies",
+    ["nigger"] = "brother",
+    ["niggers"] = "brothers",
+    ["nibba"] = "homie",
+    ["negro"] = "fellow",
+    ["faggot"] = "fool",
+    ["faggots"] = "fools",
     ["fag"] = "fool",
+    ["fags"] = "fools",
+    ["dyke"] = "rebel",
+    ["tranny"] = "person",
     ["retard"] = "silly",
+    ["retards"] = "goofballs",
     ["retarded"] = "foolish",
+    ["cripple"] = "broken",
+    ["spastic"] = "frantic",
+
+    -- ================= 3. BAHASA INGGRIS: KEKERASAN, DARAH & SENJATA =================
+    ["suicidal"] = "hopeless",
     ["suicide"] = "give up",
-    ["kill"] = "chill",
+    ["kms"] = "sigh",
+    ["kys"] = "bye",
     ["killing"] = "chilling",
     ["killed"] = "chilled",
+    ["killer"] = "hunter",
+    ["kills"] = "chills",
+    ["kill"] = "chill",
+    ["murderer"] = "stranger",
+    ["murdered"] = "vanished",
+    ["murdering"] = "chasing",
     ["murder"] = "mystery",
+    ["homicide"] = "incident",
+    ["genocide"] = "wipeout",
+    ["massacre"] = "chaos",
+    ["slaughter"] = "defeat",
+    ["butcher"] = "fighter",
+    ["dying"] = "fading",
+    ["died"] = "faded",
+    ["dies"] = "fades",
     ["die"] = "fly",
-    ["dying"] = "flying",
     ["dead"] = "gone",
     ["death"] = "sleep",
-    ["blood"] = "sweat",
+    ["corpse"] = "statue",
+    ["coffin"] = "box",
+    ["grave"] = "ground",
+    ["bleeding"] = "crying",
+    ["bleed"] = "cry",
     ["bloody"] = "messy",
+    ["blood"] = "sweat",
+    ["gore"] = "mess",
+    ["stabbed"] = "poked",
+    ["stabbing"] = "poking",
+    ["stab"] = "poke",
+    ["slit"] = "cut",
+    ["choke"] = "gasp",
+    ["choking"] = "gasping",
+    ["strangle"] = "grab",
+    ["hang"] = "hold",
+    ["hanged"] = "held",
+    ["shoot"] = "blast",
+    ["shooting"] = "blasting",
+    ["shotgun"] = "blaster",
+    ["gunshot"] = "thunder",
+    ["guns"] = "blasters",
+    ["gun"] = "blaster",
+    ["pistol"] = "blaster",
+    ["rifle"] = "blaster",
+    ["glock"] = "blaster",
+    ["ak47"] = "blaster",
+    ["bullets"] = "sparks",
+    ["bullet"] = "spark",
+    ["trigger"] = "switch",
+    ["bomb"] = "boom",
+    ["terrorist"] = "villain",
+    ["terrorism"] = "chaos",
+    ["hostage"] = "captive",
+    ["torture"] = "trouble",
+    ["abuse"] = "mistreat",
+    ["violent"] = "wild",
+    ["violence"] = "chaos",
+
+    -- ================= 4. BAHASA INGGRIS: DEWASA, ROMANSA EKSTREM & ALKOHOL/OBAT =================
+    ["sexual"] = "romantic",
+    ["sexually"] = "deeply",
+    ["sex"] = "love",
+    ["sexy"] = "lovely",
+    ["sexiest"] = "loveliest",
+    ["porn"] = "movie",
+    ["porno"] = "movie",
+    ["hentai"] = "anime",
+    ["nsfw"] = "secret",
+    ["nude"] = "bare",
+    ["nudes"] = "photos",
+    ["naked"] = "bare",
+    ["horny"] = "lonely",
+    ["orgasm"] = "climax",
+    ["climax"] = "peak",
+    ["cum"] = "come",
+    ["cumming"] = "coming",
+    ["sperm"] = "seed",
+    ["erection"] = "rising",
+    ["boner"] = "spark",
+    ["boobs"] = "chest",
+    ["boob"] = "chest",
+    ["titties"] = "chest",
+    ["tits"] = "chest",
+    ["tit"] = "chest",
+    ["nipples"] = "buttons",
+    ["nipple"] = "button",
+    ["booty"] = "hips",
+    ["thighs"] = "legs",
+    ["virgin"] = "innocent",
+    ["virginity"] = "innocence",
+    ["lust"] = "desire",
+    ["fetish"] = "habit",
+    ["kinky"] = "quirky",
+    ["bdsm"] = "chains",
+    ["rape"] = "hurt",
+    ["raped"] = "hurt",
+    ["rapist"] = "villain",
+    ["molest"] = "bother",
+    ["pedophile"] = "creep",
+    ["pedo"] = "creep",
+    ["incest"] = "kin",
     ["drugs"] = "sweets",
     ["drug"] = "candy",
     ["weed"] = "herb",
-    ["cocaine"] = "sugar",
+    ["marijuana"] = "herbs",
+    ["cannabis"] = "herbs",
+    ["blunt"] = "stick",
+    ["joint"] = "roll",
+    ["stoned"] = "sleepy",
+    ["cocaine"] = "powder",
+    ["coke"] = "soda",
+    ["heroin"] = "potion",
+    ["meth"] = "crystal",
+    ["ecstasy"] = "joy",
+    ["molly"] = "candy",
+    ["lsd"] = "dream",
+    ["acid"] = "lemon",
+    ["pills"] = "mints",
+    ["pill"] = "mint",
+    ["overdose"] = "overload",
+    ["addict"] = "fan",
+    ["addicted"] = "hooked",
+    ["nicotine"] = "caffeine",
+    ["cigarette"] = "candle",
+    ["cigarettes"] = "candles",
+    ["vape"] = "mist",
+    ["smoking"] = "glowing",
+    ["smoke"] = "cloud",
     ["drunk"] = "dizzy",
+    ["wasted"] = "tired",
+    ["tipsy"] = "giggly",
     ["alcohol"] = "soda",
     ["liquor"] = "juice",
-    ["sex"] = "love",
-    ["sexy"] = "lovely",
-    ["naked"] = "bare",
-    ["gun"] = "toy",
-    ["guns"] = "toys",
-    ["shoot"] = "blast",
-    ["shooting"] = "blasting",
+    ["whiskey"] = "tea",
+    ["vodka"] = "water",
+    ["tequila"] = "lemonade",
+    ["beer"] = "rootbeer",
+    ["wine"] = "grape",
+    ["champagne"] = "sparkling",
+    ["bartender"] = "barista",
 
-    -- Bahasa Indonesia
+    -- ================= 5. BAHASA INDONESIA: UMPATAN, HEWAN & KASAR =================
     ["anjing"] = "kucing",
     ["anjir"] = "astaga",
     ["anjay"] = "keren",
+    ["anjrit"] = "waduh",
+    ["anjrot"] = "waduh",
+    ["anying"] = "kucing",
+    ["njir"] = "wah",
+    ["njay"] = "keren",
+    ["asu"] = "kucing",
     ["babi"] = "kelinci",
+    ["celeng"] = "kelinci",
     ["monyet"] = "kera",
+    ["kunyuk"] = "kera",
+    ["kampret"] = "kelelawar",
     ["bangsat"] = "nakal",
+    ["bgst"] = "nakal",
     ["brengsek"] = "bandel",
     ["bajingan"] = "penjahat",
     ["keparat"] = "nakal",
-    ["kampret"] = "kelelawar",
-    ["kontol"] = "konyol",
-    ["memek"] = "bebek",
-    ["jembut"] = "rambut",
-    ["ngentot"] = "joget",
-    ["peju"] = "keju",
-    ["pelacur"] = "penari",
-    ["lonte"] = "bunga",
-    ["jablay"] = "santai",
+    ["bedebah"] = "bandel",
+    ["kurangajar"] = "nakal",
+    ["sialan"] = "aduhai",
+    ["sial"] = "malang",
+    ["bangke"] = "bangkai",
+    ["bangkai"] = "ranting",
+    ["tai"] = "debu",
+    ["tahi"] = "debu",
+    ["taik"] = "debu",
+    ["berak"] = "pergi",
+    ["kentut"] = "angin",
+    ["kencing"] = "air",
+    ["bacot"] = "bicara",
+    ["bct"] = "bicara",
+    ["cocot"] = "mulut",
+    ["congost"] = "mulut",
+    ["congor"] = "mulut",
+    ["nyinyir"] = "cerewet",
+    ["mampus"] = "habis",
+    ["modar"] = "habis",
+    ["kojor"] = "lemas",
+    ["matek"] = "lemas",
+    ["setan"] = "bayangan",
+    ["syaiton"] = "bayangan",
+    ["iblis"] = "bayangan",
+    ["dajjal"] = "raksasa",
+    ["neraka"] = "lembah",
+    ["jahanam"] = "gelap",
+    ["laknat"] = "buruk",
+    ["terkutuk"] = "terlupakan",
+    ["haram"] = "terlarang",
+    ["dosa"] = "salah",
+    ["berdosa"] = "bersalah",
+    ["kafir"] = "asing",
+
+    -- ================= 6. BAHASA INDONESIA: HINAAN FISIK / MENTAL & SLANG DAERAH =================
     ["goblok"] = "polos",
     ["goblog"] = "polos",
+    ["gblk"] = "polos",
     ["tolol"] = "lucu",
+    ["tll"] = "lucu",
     ["bodoh"] = "polos",
     ["bego"] = "lugu",
+    ["begok"] = "lugu",
+    ["oon"] = "lugu",
+    ["bloon"] = "lugu",
+    ["dungu"] = "polos",
     ["idiot"] = "unik",
-    ["sinting"] = "heboh",
+    ["autis"] = "fokus",
+    ["cacat"] = "kurang",
     ["gila"] = "heboh",
-    ["setan"] = "bayangan",
-    ["iblis"] = "bayangan",
-    ["neraka"] = "lembah",
-    ["mati"] = "pergi",
-    ["bunuh"] = "kejar",
-    ["membunuh"] = "mengejar",
-    ["darah"] = "merah",
-    ["mabuk"] = "pusing",
-    ["miras"] = "sirup",
-    ["narkoba"] = "permen",
+    ["sinting"] = "heboh",
+    ["sarap"] = "heboh",
+    ["edan"] = "heboh",
+    ["stres"] = "pusing",
+    ["depresi"] = "sedih",
+    ["frustrasi"] = "kecewa",
+    ["budek"] = "kurang dengar",
+    ["buta"] = "gelap",
+    ["bisu"] = "diam",
+    ["pincang"] = "pelan",
+    ["gendut"] = "gemoy",
+    ["gembrot"] = "gemoy",
+    ["ceking"] = "ramping",
+    ["jelek"] = "biasa",
+    ["burik"] = "pudar",
+    ["dekil"] = "lusuh",
+    ["miskin"] = "sederhana",
+    ["melarat"] = "sederhana",
+    ["gembel"] = "pengembara",
+    ["pengemis"] = "pencari",
+    ["sampah"] = "dedaunan",
+    ["pecundang"] = "pemula",
+    ["cupu"] = "pemula",
+    ["noob"] = "pemula",
+    ["jancok"] = "astaga",
+    ["jancuk"] = "astaga",
+    ["dancok"] = "astaga",
+    ["cuk"] = "kawan",
+    ["cok"] = "kawan",
+    ["jangkrik"] = "belalang",
+    ["matamu"] = "matanya",
+    ["ndasmu"] = "kepalamu",
+    ["lambemu"] = "ucapanmu",
+    ["raimu"] = "wajahmu",
+    ["pantek"] = "waduh",
+    ["pante"] = "pantai",
+    ["kimak"] = "astaga",
+    ["pukimak"] = "astaga",
+    ["puki"] = "kucing",
+    ["sundal"] = "nakal",
+    ["bujang"] = "pemuda",
+
+    -- ================= 7. BAHASA INDONESIA: DEWASA, ANATOMI & VULGAR =================
+    ["kontol"] = "konyol",
+    ["kntl"] = "konyol",
+    ["memek"] = "bebek",
+    ["mmk"] = "bebek",
+    ["pepek"] = "bebek",
+    ["jembut"] = "rambut",
+    ["jmbt"] = "rambut",
+    ["itil"] = "kecil",
+    ["pentil"] = "ujung",
+    ["tetek"] = "dada",
+    ["tete"] = "dada",
+    ["toket"] = "dada",
+    ["payudara"] = "dada",
+    ["buahdada"] = "dada",
+    ["pantat"] = "belakang",
+    ["bokong"] = "belakang",
+    ["bool"] = "belakang",
+    ["paha"] = "kaki",
+    ["selangkangan"] = "pinggang",
+    ["kelamin"] = "raga",
+    ["zakar"] = "raga",
+    ["vagina"] = "bunga",
+    ["penis"] = "batang",
+    ["ngentot"] = "joget",
+    ["entot"] = "joget",
+    ["ngewe"] = "joget",
+    ["ewe"] = "joget",
+    ["kenthu"] = "joget",
+    ["kimpoi"] = "menikah",
+    ["kawin"] = "menikah",
+    ["peju"] = "keju",
+    ["mani"] = "embun",
+    ["sperma"] = "benih",
+    ["coli"] = "sendiri",
+    ["onani"] = "sendiri",
+    ["masturbasi"] = "melamun",
+    ["desah"] = "napas",
+    ["mendesah"] = "bernapas",
+    ["sange"] = "rindu",
+    ["horni"] = "rindu",
+    ["nafsu"] = "hasrat",
+    ["birahi"] = "hasrat",
+    ["gairah"] = "semangat",
+    ["syahwat"] = "perasaan",
+    ["perawan"] = "gadis",
+    ["keperawanan"] = "kesucian",
+    ["perjaka"] = "jejaka",
+    ["pelacur"] = "penari",
+    ["lonte"] = "bunga",
+    ["PSK"] = "pekerja",
+    ["psk"] = "pekerja",
+    ["jablay"] = "santai",
+    ["bispak"] = "santai",
+    ["openbo"] = "jalan",
+    ["michat"] = "pesan",
+    ["mucikari"] = "perantara",
+    ["germo"] = "perantara",
+    ["simpanan"] = "rahasia",
+    ["selingkuh"] = "mendua",
+    ["selingkuhan"] = "bayangan",
+    ["pelakor"] = "penggoda",
+    ["pebinor"] = "penggoda",
     ["telanjang"] = "polos",
+    ["bugil"] = "polos",
+    ["buka-bukaan"] = "terbuka",
+    ["seksi"] = "anggun",
+    ["montok"] = "indah",
+    ["bohay"] = "indah",
+    ["semok"] = "indah",
     ["bercinta"] = "berdansa",
     ["seks"] = "cinta",
+    ["seksual"] = "romantis",
     ["bokep"] = "film",
-    ["sialan"] = "aduhai",
-    ["sial"] = "kurang beruntung",
-    ["tai"] = "kotoran",
-    ["tahi"] = "kotoran",
-    ["bacot"] = "bicara",
-    ["스트"] = ""
+    ["mesum"] = "nakal",
+    ["cabul"] = "nakal",
+    ["perkosa"] = "lukai",
+    ["memperkosa"] = "melukai",
+    ["pemerkosaan"] = "kejahatan",
+    ["pelecehan"] = "gangguan",
+    ["ciuman"] = "senyuman",
+    ["cium"] = "senyum",
+    ["mencium"] = "menyapa",
+    ["bibir"] = "senyum",
+    ["peluk"] = "dekap",
+    ["memeluk"] = "mendekap",
+    ["ranjang"] = "tempat",
+    ["kasur"] = "bantal",
+    ["kamar"] = "ruang",
+
+    -- ================= 8. BAHASA INDONESIA: KEKERASAN, KRIMINAL & ZAT TERLARANG =================
+    ["mati"] = "pergi",
+    ["matilah"] = "pergilah",
+    ["kematian"] = "kepergian",
+    ["meninggal"] = "berpulang",
+    ["tewas"] = "gugur",
+    ["bunuh"] = "kejar",
+    ["membunuh"] = "mengejar",
+    ["pembunuh"] = "pemburu",
+    ["pembunuhan"] = "perburuan",
+    ["bantai"] = "kalahkan",
+    ["membantai"] = "mengalahkan",
+    ["cekik"] = "pegang",
+    ["mencekik"] = "memegang",
+    ["tikam"] = "sentuh",
+    ["menikam"] = "menyentuh",
+    ["tusuk"] = "sentuh",
+    ["menusuk"] = "menyentuh",
+    ["bacok"] = "tebas",
+    ["membacok"] = "menebas",
+    ["penggal"] = "potong",
+    ["gantung"] = "ayun",
+    ["darah"] = "merah",
+    ["berdarah"] = "terluka",
+    ["mayat"] = "patung",
+    ["jenazah"] = "raga",
+    ["kuburan"] = "taman",
+    ["makam"] = "taman",
+    ["pisau"] = "pedang",
+    ["belati"] = "pedang",
+    ["golok"] = "pedang",
+    ["celurit"] = "sabit",
+    ["senjata"] = "alat",
+    ["peluru"] = "cahaya",
+    ["tembak"] = "bidik",
+    ["menembak"] = "membidik",
+    ["racun"] = "ramuan",
+    ["beracun"] = "berbahaya",
+    ["meracuni"] = "mengganggu",
+    ["mabuk"] = "pusing",
+    ["mabok"] = "pusing",
+    ["teler"] = "lelah",
+    ["miras"] = "sirup",
+    ["alkohol"] = "soda",
+    ["bir"] = "soda",
+    ["anggur"] = "jus",
+    ["tuak"] = "air",
+    ["ciu"] = "air",
+    ["amer"] = "sirup",
+    ["intisar"] = "sirup",
+    ["narkoba"] = "permen",
+    ["narkotika"] = "permen",
+    ["ganja"] = "daun",
+    ["sabu"] = "kristal",
+    ["ekstasi"] = "permen",
+    ["heroin"] = "bubuk",
+    ["kokain"] = "bubuk",
+    ["pil"] = "permen",
+    ["obat"] = "jamu",
+    ["rokok"] = "asap",
+    ["merokok"] = "berasap",
+    ["judi"] = "main",
+    ["berjudi"] = "bermain",
+    ["bandar"] = "penjaga",
+    ["slot"] = "mesin",
+    ["maling"] = "pencari",
+    ["pencuri"] = "pengambil",
+    ["merampok"] = "mengambil",
+    ["korupsi"] = "curang",
+    ["penjara"] = "istana",
+
+    -- ================= 9. NAMA PLATFORM & TRIGGER MODERASI ROBLOX (OFF-SITE LINKS) =================
+    -- Roblox sering menyensor satu kalimat penuh jika mendeteksi nama aplikasi luar
+    ["discord"] = "radio",
+    ["tiktok"] = "clock",
+    ["instagram"] = "camera",
+    ["whatsapp"] = "phone",
+    ["telegram"] = "letter",
+    ["youtube"] = "video",
+    ["twitter"] = "bird",
+    ["facebook"] = "book",
+    ["snapchat"] = "ghost",
+    ["tinder"] = "flame",
+    ["onlyfans"] = "fanclub",
+    ["spotify"] = "music"
+
 }
 
--- Mengikuti kapitalisasi kata asli (Huruf Besar / Kecil)
 local function matchCase(original, replacement)
     if original == original:upper() and #original > 1 then
         return replacement:upper()
@@ -190,14 +632,12 @@ local function sanitizeLyricText(text)
         return text
     end
 
-    -- Ganti kata per kata jika cocok dengan kamus kata terlarang
     local cleaned = text:gsub("([%a']+)", function(word)
         local lowerWord = word:lower()
         local rep = wordReplacements[lowerWord]
         if rep then
             return matchCase(word, rep)
         end
-        -- Cek jika ada apostrof seperti fuckin'
         local stripped = lowerWord:gsub("'", "")
         if wordReplacements[stripped] then
             return matchCase(word, wordReplacements[stripped])
@@ -205,9 +645,7 @@ local function sanitizeLyricText(text)
         return word
     end)
 
-    -- Hindari sensor angka beruntun di chat Roblox (contoh: 1234 -> 1 2 3 4)
     cleaned = cleaned:gsub("(%d)(%d)", "%1 %2"):gsub("(%d)(%d)", "%1 %2")
-
     return cleaned
 end
 
@@ -534,26 +972,120 @@ topBar.Active = true
 topBar.Parent = main
 Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 12)
 
-local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 10, 0, 3), UDim2.new(1, -210, 0, 18), "KOPLINGTIFY LITE", 12, Color3.fromRGB(30, 230, 135))
+local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 10, 0, 3), UDim2.new(1, -230, 0, 18), "KOPLINGTIFY LITE", 12, Color3.fromRGB(30, 230, 135))
 titleHeader.Font = Enum.Font.GothamBold
 titleHeader.TextXAlignment = Enum.TextXAlignment.Left
 
-local status = makeLabel(topBar, "Status", UDim2.new(0, 10, 0, 20), UDim2.new(1, -210, 0, 16), "Putar musik atau cari lirik...", 9, Color3.fromRGB(160, 168, 178))
+local status = makeLabel(topBar, "Status", UDim2.new(0, 10, 0, 20), UDim2.new(1, -230, 0, 16), "Putar musik atau cari lirik...", 9, Color3.fromRGB(160, 168, 178))
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextTruncate = Enum.TextTruncate.AtEnd
 
--- Tombol Kontrol Header (🎥 Orbit Cam, 📺 Subtitle, 🔊 Mute, 🎵 Pill, — Minimize, × Close)
-local orbitBtn = makeButton(topBar, "🎥", UDim2.new(1, -198, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
-local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -166, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
-local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -134, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
-local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -102, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
-local minBtn = makeButton(topBar, "—", UDim2.new(1, -70, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
+-- Tombol Kontrol Header (🎥 Orbit, ⚙ Orbit Setting, 📺 Subtitle, 🔊 Mute, 🎵 Pill, — Minimize, × Close)
+local orbitBtn = makeButton(topBar, "🎥", UDim2.new(1, -218, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
+local orbitCfgBtn = makeButton(topBar, "⚙", UDim2.new(1, -188, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
+local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -158, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
+local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -128, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
+local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -98, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
+local minBtn = makeButton(topBar, "—", UDim2.new(1, -68, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
 local closeBtn = makeButton(topBar, "×", UDim2.new(1, -38, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(130, 42, 48))
 closeBtn.TextSize = 15
 
 enableDrag(topBar, main)
 enableDrag(floatBtn, floatBtn)
 enableDrag(subtitleFrame, subtitleFrame)
+
+-- ======================== PANEL KUSTOMISASI ORBIT KAMERA (⚙) ========================
+local orbitPanel = Instance.new("Frame")
+orbitPanel.Name = "OrbitSettingsPanel"
+orbitPanel.Size = UDim2.new(0, 280, 0, 290)
+orbitPanel.Position = UDim2.new(0.5, 178, 0.1, 0)
+orbitPanel.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
+orbitPanel.BorderSizePixel = 0
+orbitPanel.Visible = false
+orbitPanel.Active = true
+orbitPanel.Parent = gui
+Instance.new("UICorner", orbitPanel).CornerRadius = UDim.new(0, 12)
+
+local orbitStroke = Instance.new("UIStroke", orbitPanel)
+orbitStroke.Color = Color3.fromRGB(165, 105, 235)
+orbitStroke.Thickness = 1.5
+
+local orbitTopBar = Instance.new("Frame")
+orbitTopBar.Size = UDim2.new(1, 0, 0, 34)
+orbitTopBar.BackgroundColor3 = Color3.fromRGB(30, 32, 42)
+orbitTopBar.BorderSizePixel = 0
+orbitTopBar.Active = true
+orbitTopBar.Parent = orbitPanel
+Instance.new("UICorner", orbitTopBar).CornerRadius = UDim.new(0, 12)
+
+local orbitTitle = makeLabel(orbitTopBar, "OrbitTitle", UDim2.new(0, 12, 0, 0), UDim2.new(1, -45, 1, 0), "🎥 PENGATURAN ORBIT KAMERA", 11, Color3.fromRGB(205, 165, 255))
+orbitTitle.Font = Enum.Font.GothamBold
+orbitTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local closeOrbitPanelBtn = makeButton(orbitTopBar, "×", UDim2.new(1, -30, 0, 4), UDim2.new(0, 24, 0, 26), Color3.fromRGB(120, 42, 48))
+closeOrbitPanelBtn.TextSize = 14
+enableDrag(orbitTopBar, orbitPanel)
+
+local orbitToggleInsideBtn = makeButton(orbitPanel, "Status Orbit: OFF", UDim2.new(0, 12, 0, 42), UDim2.new(1, -24, 0, 28), Color3.fromRGB(39, 45, 55))
+
+local orbitUiUpdaters = {}
+
+local function createOrbitSettingRow(yPos, labelText, formatStr, getVal, setVal, step, minVal, maxVal)
+    local lbl = makeLabel(orbitPanel, labelText, UDim2.new(0, 12, 0, yPos), UDim2.new(0, 125, 0, 26), labelText, 11, Color3.fromRGB(210, 215, 225))
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local btnMinus = makeButton(orbitPanel, "−", UDim2.new(0, 142, 0, yPos), UDim2.new(0, 32, 0, 26), Color3.fromRGB(40, 46, 56))
+    btnMinus.TextSize = 15
+
+    local valLbl = makeLabel(orbitPanel, "Val", UDim2.new(0, 176, 0, yPos), UDim2.new(0, 56, 0, 26), string.format(formatStr, getVal()), 11, Color3.fromRGB(205, 165, 255))
+    valLbl.Font = Enum.Font.GothamBold
+
+    local btnPlus = makeButton(orbitPanel, "+", UDim2.new(0, 236, 0, yPos), UDim2.new(0, 32, 0, 26), Color3.fromRGB(40, 46, 56))
+    btnPlus.TextSize = 15
+
+    local function refresh()
+        valLbl.Text = string.format(formatStr, getVal())
+    end
+    table.insert(orbitUiUpdaters, refresh)
+
+    makeHoldable(btnMinus, function()
+        local nv = math.clamp(math.floor((getVal() - step) * 100 + 0.5) / 100, minVal, maxVal)
+        setVal(nv)
+        refresh()
+    end)
+
+    makeHoldable(btnPlus, function()
+        local nv = math.clamp(math.floor((getVal() + step) * 100 + 0.5) / 100, minVal, maxVal)
+        setVal(nv)
+        refresh()
+    end)
+end
+
+-- Baris Pengaturan Orbit (Jarak, Tinggi, Kecepatan, Fokus Y, FOV)
+createOrbitSettingRow(78,  "Jarak (Stud):",    "%.1f",  function() return orbitDistance end,   function(v) orbitDistance = v end,   0.5,  2.0,  60.0)
+createOrbitSettingRow(110, "Ketinggian (Y):",  "%.1f",  function() return orbitHeight end,     function(v) orbitHeight = v end,     0.5, -10.0, 35.0)
+createOrbitSettingRow(142, "Kecepatan Putar:", "%.2fx", function() return orbitSpeed end,      function(v) orbitSpeed = v end,      0.05, 0.0,  5.0)
+createOrbitSettingRow(174, "Titik Fokus (Y):", "%.1f",  function() return orbitLookHeight end, function(v) orbitLookHeight = v end, 0.5, -5.0,  10.0)
+createOrbitSettingRow(206, "Sudut Lensa FOV:", "%d°",   function() return orbitFOV end,        function(v) orbitFOV = v end,        2,    20,   120)
+
+local orbitDirBtn = makeButton(orbitPanel, "🔄 Arah: Kanan", UDim2.new(0, 12, 0, 244), UDim2.new(0, 124, 0, 32), Color3.fromRGB(45, 52, 64))
+local orbitResetBtn = makeButton(orbitPanel, "♻ Reset Orbit", UDim2.new(0, 144, 0, 244), UDim2.new(0, 124, 0, 32), Color3.fromRGB(65, 50, 85))
+
+orbitDirBtn.MouseButton1Click:Connect(function()
+    orbitDirection = -orbitDirection
+    orbitDirBtn.Text = orbitDirection == 1 and "🔄 Arah: Kanan" or "🔄 Arah: Kiri"
+end)
+
+orbitResetBtn.MouseButton1Click:Connect(function()
+    orbitDistance = 10.0
+    orbitHeight = 3.5
+    orbitSpeed = 0.55
+    orbitLookHeight = 1.0
+    orbitFOV = 70
+    orbitDirection = 1
+    orbitDirBtn.Text = "🔄 Arah: Kanan"
+    for _, fn in ipairs(orbitUiUpdaters) do fn() end
+end)
 
 -- ======================== MINI LYRIC BAR (Tampil Saat Minimize) ========================
 local miniBar = Instance.new("Frame")
@@ -692,31 +1224,54 @@ fasterBtn.TextSize = 16
 local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 172, 0, 256), UDim2.new(0, 74, 0, 32))
 local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 252, 0, 256), UDim2.new(0, 76, 0, 32))
 
--- Baris Bawah: Auto Sync, Safe Filter, & Auto-Chat (3 Tombol Sejajar)
+-- Baris Bawah: Auto Sync, Safe Filter, & Auto-Chat
 local resetSyncBtn = makeButton(body, "🔄 SYNC", UDim2.new(0, 12, 0, 296), UDim2.new(0, 92, 0, 32), Color3.fromRGB(52, 62, 74))
 local filterBtn = makeButton(body, "🛡 Filter: ON", UDim2.new(0, 110, 0, 296), UDim2.new(0, 102, 0, 32), Color3.fromRGB(30, 145, 90))
 local chatBtn = makeButton(body, "💬 Chat: OFF", UDim2.new(0, 218, 0, 296), UDim2.new(0, 110, 0, 32), Color3.fromRGB(39, 45, 51))
 
-local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 336), UDim2.new(1, -24, 0, 20), "🎥: Kamera Orbit  |  📺: Subtitle  |  🛡: Sensor Kata Kasar", 10, Color3.fromRGB(130, 138, 150))
+local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 336), UDim2.new(1, -24, 0, 20), "🎥: Orbit  |  ⚙: Setting Orbit  |  📺: Subtitle  |  🛡: Sensor", 10, Color3.fromRGB(130, 138, 150))
 
 -- ======================== LOGIKA TOMBOL & FITUR ========================
 
 local function resetCameraToNormal()
     local cam = workspace.CurrentCamera
     local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-    if cam and cam.CameraType == Enum.CameraType.Scriptable then
+    if cam then
         cam.CameraType = Enum.CameraType.Custom
+        cam.FieldOfView = savedDefaultFOV
         if hum then cam.CameraSubject = hum end
     end
 end
 
--- 0A. Tombol Kamera Drone Orbit (🎥)
-orbitBtn.MouseButton1Click:Connect(function()
-    isOrbitEnabled = not isOrbitEnabled
+local function updateOrbitButtonVisuals()
     orbitBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(39, 45, 55)
-    if not isOrbitEnabled then
+    orbitToggleInsideBtn.Text = "Status Orbit: " .. (isOrbitEnabled and "ON (Aktif)" or "OFF (Mati)")
+    orbitToggleInsideBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(135, 75, 205) or Color3.fromRGB(39, 45, 55)
+end
+
+local function toggleOrbitState()
+    isOrbitEnabled = not isOrbitEnabled
+    if isOrbitEnabled then
+        local cam = workspace.CurrentCamera
+        if cam then savedDefaultFOV = cam.FieldOfView end
+    else
         resetCameraToNormal()
     end
+    updateOrbitButtonVisuals()
+end
+
+-- 0A. Tombol Kamera Drone Orbit (🎥) & Panel Pengaturan Orbit (⚙)
+orbitBtn.MouseButton1Click:Connect(toggleOrbitState)
+orbitToggleInsideBtn.MouseButton1Click:Connect(toggleOrbitState)
+
+orbitCfgBtn.MouseButton1Click:Connect(function()
+    orbitPanel.Visible = not orbitPanel.Visible
+    orbitCfgBtn.BackgroundColor3 = orbitPanel.Visible and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(39, 45, 55)
+end)
+
+closeOrbitPanelBtn.MouseButton1Click:Connect(function()
+    orbitPanel.Visible = false
+    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(39, 45, 55)
 end)
 
 -- 0B. Tombol Subtitle HUD Mengambang (📺)
@@ -745,6 +1300,8 @@ end)
 -- 2. Tombol Mode Floating Icon (🎵)
 pillModeBtn.MouseButton1Click:Connect(function()
     main.Visible = false
+    orbitPanel.Visible = false
+    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(39, 45, 55)
     floatBtn.Visible = true
 end)
 
@@ -870,7 +1427,6 @@ filterBtn.MouseButton1Click:Connect(function()
     safeFilterEnabled = not safeFilterEnabled
     filterBtn.Text = "🛡 Filter: " .. (safeFilterEnabled and "ON" or "OFF")
     filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(39, 45, 51)
-    -- Perbarui tampilan lirik saat ini secara instan
     if currentIndex > 0 and lyrics[currentIndex] then
         local p = 1
         while lyrics[currentIndex - p] and lyrics[currentIndex - p].Text == "" do p += 1 end
@@ -1111,7 +1667,7 @@ task.spawn(function()
     end
 end)
 
--- ======================== EFEK KAMERA DRONE ORBIT (RENDERSTEPPED) ========================
+-- ======================== EFEK KAMERA DRONE ORBIT KUSTOM (RENDERSTEPPED) ========================
 RunService.RenderStepped:Connect(function(dt)
     if not gui.Parent then return end
 
@@ -1122,9 +1678,17 @@ RunService.RenderStepped:Connect(function(dt)
 
     if isOrbitEnabled and hrp and hum and cam then
         cam.CameraType = Enum.CameraType.Scriptable
-        orbitAngle = orbitAngle + (dt * 0.55)
-        local orbitPos = hrp.Position + Vector3.new(math.cos(orbitAngle) * 10, 3.5, math.sin(orbitAngle) * 10)
-        cam.CFrame = CFrame.new(orbitPos, hrp.Position + Vector3.new(0, 1, 0))
+        cam.FieldOfView = cam.FieldOfView + (orbitFOV - cam.FieldOfView) * math.clamp(dt * 10, 0, 1)
+
+        orbitAngle = orbitAngle + (dt * orbitSpeed * orbitDirection)
+        local offset = Vector3.new(
+            math.cos(orbitAngle) * orbitDistance,
+            orbitHeight,
+            math.sin(orbitAngle) * orbitDistance
+        )
+        local orbitPos = hrp.Position + offset
+        local lookAtPos = hrp.Position + Vector3.new(0, orbitLookHeight, 0)
+        cam.CFrame = CFrame.new(orbitPos, lookAtPos)
         wasOrbitCam = true
     elseif wasOrbitCam then
         wasOrbitCam = false
@@ -1140,7 +1704,6 @@ RunService.Heartbeat:Connect(function()
         activeSound.Volume = 0
     end
 
-    -- Update Progress Bar & Waktu Lagu Real-Time
     local curTime = activeSound.TimePosition or 0
     local totTime = activeSound.TimeLength or 0
     if totTime <= 0 and activeItem and activeItem.Duration > 0 then
@@ -1154,7 +1717,6 @@ RunService.Heartbeat:Connect(function()
     progBarFill.Size = UDim2.new(progressRatio, 0, 1, 0)
     miniProgFill.Size = UDim2.new(progressRatio, 0, 1, 0)
 
-    -- Auto-Sync Durasi begitu TimeLength tersedia
     if activeItem and not autoSpeedSynced and not manualSpeedOverride and activeSound.TimeLength > 5 then
         applyDurationAutoSync()
     end
@@ -1198,9 +1760,9 @@ end)
 pcall(function()
     StarterGui:SetCore("SendNotification", {
         Title = "Koplingtify Lite",
-        Text = "Safe Filter & Orbit Cam siap!",
+        Text = "Custom Orbit Cam & Safe Filter siap!",
         Duration = 3
     })
 end)
 
-print("Koplingtify Lite (Safe Filter + Orbit Cam) loaded.")
+print("Koplingtify Lite (Custom Orbit Settings + Safe Filter) loaded.")
