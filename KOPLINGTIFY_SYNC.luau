@@ -1,6 +1,7 @@
--- KOPLINGTIFY LITE (FIXED - PASTI MUNCUL SAAT EXECUTE)
+-- KOPLINGTIFY LITE (SAFE WORD FILTER + ORBIT CAMERA EDITION)
 -- Fitur: Auto-Sync durasi lagu, tanpa batas max speed 2x, Auto-Search pergantian lagu,
--- UI Android ramah sentuh, Minimize, Floating Icon, Subtitle Transparan (HUD), & Progress Bar.
+-- UI Android ramah sentuh, Minimize, Floating Icon, Subtitle Transparan (HUD), Progress Bar,
+-- Deteksi & Pengganti Kata Diblokir Roblox (Safe Lyrics), & Efek Kamera Drone Orbit.
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -12,7 +13,6 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local StarterGui = game:GetService("StarterGui")
 
--- Tunggu LocalPlayer siap jika dieksekusi di autoexec
 local player = Players.LocalPlayer
 if not player then
     Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -31,14 +31,18 @@ local manualSpeedOverride = false
 local autoSpeedSynced = false
 local isAutoRatioActive = false
 local autoChat = false
+local safeFilterEnabled = true
 local isMutedLocally = false
 local isSubtitleEnabled = false
+local isOrbitEnabled = false
+local wasOrbitCam = false
+local orbitAngle = 0
 local originalVolume = 0.5
 local lastSentLine = ""
 local scanToken = 0
 local isMinimized = false
 
-local FULL_SIZE = UDim2.new(0, 340, 0, 415)
+local FULL_SIZE = UDim2.new(0, 340, 0, 420)
 local MINI_SIZE = UDim2.new(0, 340, 0, 94)
 
 local function safeCall(fn, ...)
@@ -58,6 +62,153 @@ end
 local function formatTime(seconds)
     seconds = math.max(0, math.floor(tonumber(seconds) or 0))
     return string.format("%02d:%02d", math.floor(seconds / 60), seconds % 60)
+end
+
+-- ======================== KAMUS FILTER KATA AMAN ROBLOX ========================
+-- Mengganti kata-kata yang sering terblokir (###) di Roblox dengan kata yang lebih sopan
+local wordReplacements = {
+    -- Bahasa Inggris
+    ["motherfucker"] = "troublemaker",
+    ["motherfuckin"] = "freakin",
+    ["motherfucking"] = "freaking",
+    ["fucking"] = "freaking",
+    ["fuckin"] = "freakin",
+    ["fucked"] = "messed",
+    ["fucker"] = "joker",
+    ["fuck"] = "freak",
+    ["shitting"] = "kidding",
+    ["bullshit"] = "nonsense",
+    ["shit"] = "shoot",
+    ["bitches"] = "witches",
+    ["bitch"] = "witch",
+    ["asshole"] = "rascal",
+    ["ass"] = "butt",
+    ["bastard"] = "rascal",
+    ["damn"] = "darn",
+    ["goddamn"] = "goshdarn",
+    ["hell"] = "heck",
+    ["cunt"] = "jerk",
+    ["dick"] = "jerk",
+    ["cock"] = "rooster",
+    ["pussy"] = "kitty",
+    ["whore"] = "player",
+    ["slut"] = "heartbreaker",
+    ["nigga"] = "homie",
+    ["nigger"] = "brother",
+    ["niggas"] = "homies",
+    ["faggot"] = "loser",
+    ["fag"] = "fool",
+    ["retard"] = "silly",
+    ["retarded"] = "foolish",
+    ["suicide"] = "give up",
+    ["kill"] = "chill",
+    ["killing"] = "chilling",
+    ["killed"] = "chilled",
+    ["murder"] = "mystery",
+    ["die"] = "fly",
+    ["dying"] = "flying",
+    ["dead"] = "gone",
+    ["death"] = "sleep",
+    ["blood"] = "sweat",
+    ["bloody"] = "messy",
+    ["drugs"] = "sweets",
+    ["drug"] = "candy",
+    ["weed"] = "herb",
+    ["cocaine"] = "sugar",
+    ["drunk"] = "dizzy",
+    ["alcohol"] = "soda",
+    ["liquor"] = "juice",
+    ["sex"] = "love",
+    ["sexy"] = "lovely",
+    ["naked"] = "bare",
+    ["gun"] = "toy",
+    ["guns"] = "toys",
+    ["shoot"] = "blast",
+    ["shooting"] = "blasting",
+
+    -- Bahasa Indonesia
+    ["anjing"] = "kucing",
+    ["anjir"] = "astaga",
+    ["anjay"] = "keren",
+    ["babi"] = "kelinci",
+    ["monyet"] = "kera",
+    ["bangsat"] = "nakal",
+    ["brengsek"] = "bandel",
+    ["bajingan"] = "penjahat",
+    ["keparat"] = "nakal",
+    ["kampret"] = "kelelawar",
+    ["kontol"] = "konyol",
+    ["memek"] = "bebek",
+    ["jembut"] = "rambut",
+    ["ngentot"] = "joget",
+    ["peju"] = "keju",
+    ["pelacur"] = "penari",
+    ["lonte"] = "bunga",
+    ["jablay"] = "santai",
+    ["goblok"] = "polos",
+    ["goblog"] = "polos",
+    ["tolol"] = "lucu",
+    ["bodoh"] = "polos",
+    ["bego"] = "lugu",
+    ["idiot"] = "unik",
+    ["sinting"] = "heboh",
+    ["gila"] = "heboh",
+    ["setan"] = "bayangan",
+    ["iblis"] = "bayangan",
+    ["neraka"] = "lembah",
+    ["mati"] = "pergi",
+    ["bunuh"] = "kejar",
+    ["membunuh"] = "mengejar",
+    ["darah"] = "merah",
+    ["mabuk"] = "pusing",
+    ["miras"] = "sirup",
+    ["narkoba"] = "permen",
+    ["telanjang"] = "polos",
+    ["bercinta"] = "berdansa",
+    ["seks"] = "cinta",
+    ["bokep"] = "film",
+    ["sialan"] = "aduhai",
+    ["sial"] = "kurang beruntung",
+    ["tai"] = "kotoran",
+    ["tahi"] = "kotoran",
+    ["bacot"] = "bicara",
+    ["스트"] = ""
+}
+
+-- Mengikuti kapitalisasi kata asli (Huruf Besar / Kecil)
+local function matchCase(original, replacement)
+    if original == original:upper() and #original > 1 then
+        return replacement:upper()
+    elseif original:sub(1, 1) == original:sub(1, 1):upper() then
+        return replacement:sub(1, 1):upper() .. replacement:sub(2)
+    end
+    return replacement
+end
+
+local function sanitizeLyricText(text)
+    if not text or text == "" or not safeFilterEnabled then
+        return text
+    end
+
+    -- Ganti kata per kata jika cocok dengan kamus kata terlarang
+    local cleaned = text:gsub("([%a']+)", function(word)
+        local lowerWord = word:lower()
+        local rep = wordReplacements[lowerWord]
+        if rep then
+            return matchCase(word, rep)
+        end
+        -- Cek jika ada apostrof seperti fuckin'
+        local stripped = lowerWord:gsub("'", "")
+        if wordReplacements[stripped] then
+            return matchCase(word, wordReplacements[stripped])
+        end
+        return word
+    end)
+
+    -- Hindari sensor angka beruntun di chat Roblox (contoh: 1234 -> 1 2 3 4)
+    cleaned = cleaned:gsub("(%d)(%d)", "%1 %2"):gsub("(%d)(%d)", "%1 %2")
+
+    return cleaned
 end
 
 local function cleanSongName(name)
@@ -147,13 +298,14 @@ end
 
 local function sendChat(message)
     if not message or message == "" then return end
+    local safeMsg = sanitizeLyricText(message)
     local sent = false
     pcall(function()
         if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
             local channels = TextChatService:FindFirstChild("TextChannels")
             local channel = channels and (channels:FindFirstChild("RBXGeneral") or channels:FindFirstChildWhichIsA("TextChannel"))
             if channel then
-                channel:SendAsync(message)
+                channel:SendAsync(safeMsg)
                 sent = true
             end
         end
@@ -162,7 +314,7 @@ local function sendChat(message)
         pcall(function()
             local folder = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
             local remote = folder and folder:FindFirstChild("SayMessageRequest")
-            if remote then remote:FireServer(message, "All") end
+            if remote then remote:FireServer(safeMsg, "All") end
         end)
     end
 end
@@ -185,7 +337,7 @@ local function findSound()
     return best
 end
 
--- ======================== SAFE GUI PARENT (FIX TIDAK MUNCUL) ========================
+-- ======================== SAFE GUI PARENT ========================
 local function getSafeParent()
     local okGethui, hui = pcall(function()
         return gethui and gethui()
@@ -200,7 +352,6 @@ local function getSafeParent()
     return player:WaitForChild("PlayerGui")
 end
 
--- Bersihkan UI lama di semua kemungkinan tempat
 pcall(function()
     if gethui and gethui():FindFirstChild("KoplingtifyLite") then gethui().KoplingtifyLite:Destroy() end
 end)
@@ -218,7 +369,7 @@ gui.ResetOnSpawn = false
 gui.DisplayOrder = 9999
 gui.Parent = getSafeParent()
 
--- Frame Utama (Menggunakan posisi eksplisit seperti skrip awal agar pasti terlihat)
+-- Frame Utama
 local main = Instance.new("Frame")
 main.Name = "Main"
 main.Size = FULL_SIZE
@@ -234,7 +385,7 @@ mainStroke.Color = Color3.fromRGB(30, 215, 125)
 mainStroke.Thickness = 1.5
 mainStroke.Transparency = 0.25
 
--- Tombol Mengambang (Floating Pill saat disembunyikan penuh)
+-- Tombol Mengambang (Floating Pill)
 local floatBtn = Instance.new("TextButton")
 floatBtn.Name = "FloatingToggle"
 floatBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -312,7 +463,7 @@ local function makeButton(parent, text, pos, size, bgColor)
     b.BackgroundColor3 = bgColor or Color3.fromRGB(39, 45, 51)
     b.TextColor3 = Color3.fromRGB(245, 245, 245)
     b.Font = Enum.Font.GothamSemibold
-    b.TextSize = 12
+    b.TextSize = 11
     b.Text = text
     b.AutoButtonColor = true
     b.Parent = parent
@@ -343,7 +494,6 @@ local function makeHoldable(btn, callback)
     end)
 end
 
--- Fungsi Dragging Khusus Android & Mouse
 local function enableDrag(dragHandle, targetFrame)
     local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
     dragHandle.InputBegan:Connect(function(input)
@@ -384,20 +534,21 @@ topBar.Active = true
 topBar.Parent = main
 Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 12)
 
-local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 12, 0, 3), UDim2.new(1, -185, 0, 18), "KOPLINGTIFY LITE", 13, Color3.fromRGB(30, 230, 135))
+local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 10, 0, 3), UDim2.new(1, -210, 0, 18), "KOPLINGTIFY LITE", 12, Color3.fromRGB(30, 230, 135))
 titleHeader.Font = Enum.Font.GothamBold
 titleHeader.TextXAlignment = Enum.TextXAlignment.Left
 
-local status = makeLabel(topBar, "Status", UDim2.new(0, 12, 0, 20), UDim2.new(1, -185, 0, 16), "Putar musik atau cari lirik...", 10, Color3.fromRGB(160, 168, 178))
+local status = makeLabel(topBar, "Status", UDim2.new(0, 10, 0, 20), UDim2.new(1, -210, 0, 16), "Putar musik atau cari lirik...", 9, Color3.fromRGB(160, 168, 178))
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextTruncate = Enum.TextTruncate.AtEnd
 
--- Tombol Kontrol Header (📺 Subtitle, 🔊 Mute, 🎵 Pill, — Minimize, × Close)
-local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -172, 0, 6), UDim2.new(0, 30, 0, 28), Color3.fromRGB(39, 45, 55))
-local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -138, 0, 6), UDim2.new(0, 30, 0, 28), Color3.fromRGB(39, 45, 55))
-local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -104, 0, 6), UDim2.new(0, 30, 0, 28), Color3.fromRGB(39, 45, 55))
-local minBtn = makeButton(topBar, "—", UDim2.new(1, -70, 0, 6), UDim2.new(0, 30, 0, 28), Color3.fromRGB(39, 45, 55))
-local closeBtn = makeButton(topBar, "×", UDim2.new(1, -36, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(130, 42, 48))
+-- Tombol Kontrol Header (🎥 Orbit Cam, 📺 Subtitle, 🔊 Mute, 🎵 Pill, — Minimize, × Close)
+local orbitBtn = makeButton(topBar, "🎥", UDim2.new(1, -198, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
+local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -166, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
+local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -134, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
+local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -102, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
+local minBtn = makeButton(topBar, "—", UDim2.new(1, -70, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(39, 45, 55))
+local closeBtn = makeButton(topBar, "×", UDim2.new(1, -38, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(130, 42, 48))
 closeBtn.TextSize = 15
 
 enableDrag(topBar, main)
@@ -456,6 +607,7 @@ searchBox.Parent = body
 Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 7)
 
 local clearSearchBtn = makeButton(body, "×", UDim2.new(1, -94, 0, 4), UDim2.new(0, 26, 0, 32), Color3.fromRGB(50, 56, 66))
+clearSearchBtn.TextSize = 14
 clearSearchBtn.MouseButton1Click:Connect(function()
     searchBox.Text = ""
     searchBox:CaptureFocus()
@@ -530,7 +682,7 @@ timeTotalLbl.TextXAlignment = Enum.TextXAlignment.Right
 local syncInfo = makeLabel(body, "SyncInfo", UDim2.new(0, 12, 0, 234), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(30, 230, 135))
 syncInfo.TextXAlignment = Enum.TextXAlignment.Center
 
--- Kontrol Kecepatan & Offset (Ramah Sentuhan)
+-- Kontrol Kecepatan & Offset
 local slowerBtn = makeButton(body, "−", UDim2.new(0, 12, 0, 256), UDim2.new(0, 38, 0, 32))
 slowerBtn.TextSize = 16
 local speedBtn = makeButton(body, "1.00x", UDim2.new(0, 54, 0, 256), UDim2.new(0, 68, 0, 32))
@@ -540,15 +692,34 @@ fasterBtn.TextSize = 16
 local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 172, 0, 256), UDim2.new(0, 74, 0, 32))
 local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 252, 0, 256), UDim2.new(0, 76, 0, 32))
 
--- Baris Bawah: Reset Auto-Sync & Toggle Auto-Chat
-local resetSyncBtn = makeButton(body, "🔄 AUTO SYNC", UDim2.new(0, 12, 0, 296), UDim2.new(0, 152, 0, 32), Color3.fromRGB(52, 62, 74))
-local chatBtn = makeButton(body, "💬 Auto-Chat: OFF", UDim2.new(0, 170, 0, 296), UDim2.new(0, 158, 0, 32), Color3.fromRGB(39, 45, 51))
+-- Baris Bawah: Auto Sync, Safe Filter, & Auto-Chat (3 Tombol Sejajar)
+local resetSyncBtn = makeButton(body, "🔄 SYNC", UDim2.new(0, 12, 0, 296), UDim2.new(0, 92, 0, 32), Color3.fromRGB(52, 62, 74))
+local filterBtn = makeButton(body, "🛡 Filter: ON", UDim2.new(0, 110, 0, 296), UDim2.new(0, 102, 0, 32), Color3.fromRGB(30, 145, 90))
+local chatBtn = makeButton(body, "💬 Chat: OFF", UDim2.new(0, 218, 0, 296), UDim2.new(0, 110, 0, 32), Color3.fromRGB(39, 45, 51))
 
-local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 336), UDim2.new(1, -24, 0, 18), "Ketuk 📺 di atas untuk Subtitle transparan di layar.", 10, Color3.fromRGB(130, 138, 150))
+local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 336), UDim2.new(1, -24, 0, 20), "🎥: Kamera Orbit  |  📺: Subtitle  |  🛡: Sensor Kata Kasar", 10, Color3.fromRGB(130, 138, 150))
 
--- ======================== LOGIKA TOMBOL & MINIMIZE ========================
+-- ======================== LOGIKA TOMBOL & FITUR ========================
 
--- 0. Tombol Subtitle HUD Mengambang (📺)
+local function resetCameraToNormal()
+    local cam = workspace.CurrentCamera
+    local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+    if cam and cam.CameraType == Enum.CameraType.Scriptable then
+        cam.CameraType = Enum.CameraType.Custom
+        if hum then cam.CameraSubject = hum end
+    end
+end
+
+-- 0A. Tombol Kamera Drone Orbit (🎥)
+orbitBtn.MouseButton1Click:Connect(function()
+    isOrbitEnabled = not isOrbitEnabled
+    orbitBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(39, 45, 55)
+    if not isOrbitEnabled then
+        resetCameraToNormal()
+    end
+end)
+
+-- 0B. Tombol Subtitle HUD Mengambang (📺)
 subToggleBtn.MouseButton1Click:Connect(function()
     isSubtitleEnabled = not isSubtitleEnabled
     subtitleFrame.Visible = isSubtitleEnabled
@@ -571,7 +742,7 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 2. Tombol Mode Floating Icon (Sembunyikan penuh ke tombol bulat 🎵)
+-- 2. Tombol Mode Floating Icon (🎵)
 pillModeBtn.MouseButton1Click:Connect(function()
     main.Visible = false
     floatBtn.Visible = true
@@ -582,7 +753,7 @@ floatBtn.MouseButton1Click:Connect(function()
     main.Visible = true
 end)
 
--- 3. Tombol Mute Audio Lokal
+-- 3. Tombol Mute Audio Lokal (🔊)
 muteBtn.MouseButton1Click:Connect(function()
     isMutedLocally = not isMutedLocally
     muteBtn.Text = isMutedLocally and "🔇" or "🔊"
@@ -597,10 +768,14 @@ muteBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 4. Tombol Close
+-- 4. Tombol Close (×)
 closeBtn.MouseButton1Click:Connect(function()
     if isMutedLocally and activeSound then
         activeSound.Volume = originalVolume
+    end
+    if isOrbitEnabled then
+        isOrbitEnabled = false
+        resetCameraToNormal()
     end
     gui:Destroy()
 end)
@@ -677,10 +852,42 @@ resetSyncBtn.MouseButton1Click:Connect(function()
 end)
 updateSyncText()
 
+-- Toggle Filter Kata Aman & Auto-Chat
+local function updateDisplayedLyric(prevTxt, currTxt, nextTxt)
+    local sPrev = sanitizeLyricText(prevTxt or "")
+    local sCurr = sanitizeLyricText(currTxt or "")
+    local sNext = sanitizeLyricText(nextTxt or "")
+
+    prevLine.Text = sPrev
+    currentLine.Text = sCurr
+    nextLine.Text = sNext
+    miniLyricText.Text = sCurr
+    subMainText.Text = sCurr
+    subNextText.Text = sNext
+end
+
+filterBtn.MouseButton1Click:Connect(function()
+    safeFilterEnabled = not safeFilterEnabled
+    filterBtn.Text = "🛡 Filter: " .. (safeFilterEnabled and "ON" or "OFF")
+    filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(39, 45, 51)
+    -- Perbarui tampilan lirik saat ini secara instan
+    if currentIndex > 0 and lyrics[currentIndex] then
+        local p = 1
+        while lyrics[currentIndex - p] and lyrics[currentIndex - p].Text == "" do p += 1 end
+        local n = 1
+        while lyrics[currentIndex + n] and lyrics[currentIndex + n].Text == "" do n += 1 end
+        updateDisplayedLyric(
+            lyrics[currentIndex - p] and lyrics[currentIndex - p].Text or "",
+            lyrics[currentIndex].Text ~= "" and lyrics[currentIndex].Text or "♪",
+            lyrics[currentIndex + n] and lyrics[currentIndex + n].Text or ""
+        )
+    end
+end)
+
 chatBtn.MouseButton1Click:Connect(function()
     autoChat = not autoChat
     lastSentLine = ""
-    chatBtn.Text = "💬 Auto-Chat: " .. (autoChat and "ON" or "OFF")
+    chatBtn.Text = "💬 Chat: " .. (autoChat and "ON" or "OFF")
     chatBtn.BackgroundColor3 = autoChat and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(39, 45, 51)
 end)
 
@@ -693,15 +900,6 @@ local function clearResults()
         if child:IsA("TextButton") then child:Destroy() end
     end
     resultButtons = {}
-end
-
-local function updateDisplayedLyric(prevTxt, currTxt, nextTxt)
-    prevLine.Text = prevTxt or ""
-    currentLine.Text = currTxt or ""
-    nextLine.Text = nextTxt or ""
-    miniLyricText.Text = currTxt or ""
-    subMainText.Text = currTxt or ""
-    subNextText.Text = nextTxt or ""
 end
 
 local function activateResult(item, selectedBtn)
@@ -913,8 +1111,28 @@ task.spawn(function()
     end
 end)
 
--- ======================== SINKRONISASI & PROGRESS BAR REAL-TIME ========================
+-- ======================== EFEK KAMERA DRONE ORBIT (RENDERSTEPPED) ========================
+RunService.RenderStepped:Connect(function(dt)
+    if not gui.Parent then return end
 
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local cam = workspace.CurrentCamera
+
+    if isOrbitEnabled and hrp and hum and cam then
+        cam.CameraType = Enum.CameraType.Scriptable
+        orbitAngle = orbitAngle + (dt * 0.55)
+        local orbitPos = hrp.Position + Vector3.new(math.cos(orbitAngle) * 10, 3.5, math.sin(orbitAngle) * 10)
+        cam.CFrame = CFrame.new(orbitPos, hrp.Position + Vector3.new(0, 1, 0))
+        wasOrbitCam = true
+    elseif wasOrbitCam then
+        wasOrbitCam = false
+        resetCameraToNormal()
+    end
+end)
+
+-- ======================== SINKRONISASI & PROGRESS BAR REAL-TIME ========================
 RunService.Heartbeat:Connect(function()
     if not gui.Parent or not activeSound or not activeSound.IsPlaying then return end
 
@@ -969,9 +1187,10 @@ RunService.Heartbeat:Connect(function()
 
         updateDisplayedLyric(prevTxt, currTxt, nextTxt)
 
-        if autoChat and text ~= "" and text ~= lastSentLine then
-            lastSentLine = text
-            sendChat(text)
+        local safeChatText = sanitizeLyricText(text)
+        if autoChat and safeChatText ~= "" and safeChatText ~= lastSentLine then
+            lastSentLine = safeChatText
+            sendChat(safeChatText)
         end
     end
 end)
@@ -979,9 +1198,9 @@ end)
 pcall(function()
     StarterGui:SetCore("SendNotification", {
         Title = "Koplingtify Lite",
-        Text = "Berhasil dimuat!",
+        Text = "Safe Filter & Orbit Cam siap!",
         Duration = 3
     })
 end)
 
-print("Koplingtify Lite (Fixed Edition) loaded.")
+print("Koplingtify Lite (Safe Filter + Orbit Cam) loaded.")
