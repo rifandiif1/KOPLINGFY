@@ -74,7 +74,7 @@ local targetWords = {
     "slot", "maling", "pencuri", "korupsi", "penjara",
 
     -- Kata Kasar, Dewasa & Rawan Sensor Inggris
-    "motherfucker", "motherfuckers", "motherfucking", "mf", "fucking", "fuckin",
+    "motherfucker", "motherfuckers", "motherfucking", "mf", "depres", "depress", "depresed", "depressed", "fucking", "fuckin",
     "fucked", "fucker", "fuck", "fucks", "fck", "fuk", "wtf", "stfu", "shitting",
     "shitty", "bullshit", "shit", "sht", "bitching", "bitches", "bitch", "btch",
     "asshole", "assholes", "dumbass", "jackass", "badass", "ass", "bastard",
