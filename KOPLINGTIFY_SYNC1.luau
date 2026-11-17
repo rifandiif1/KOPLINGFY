@@ -15,6 +15,57 @@ if not player then
     player = Players.LocalPlayer
 end
 
+-- ======================== SISTEM AUTO-SAVE KONFIGURASI ========================
+local CONFIG_FILE = "Koplingtify_Config_v25.json"
+local Config = {
+    safeFilterEnabled = true,
+    translateEnabled = true,
+    romanizeEnabled = true,
+    chatLangMode = 1,
+    isSubtitleEnabled = false,
+    subOffsetX = 0,
+    subOffsetY = 0,
+    subTextSize = 20,
+    subCinemaBg = false,
+    subLocked = false,
+    subColorIndex = 1,
+    orbitDistance = 10.0,
+    orbitHeight = 3.5,
+    orbitSpeed = 0.55,
+    orbitLookHeight = 1.0,
+    orbitFOV = 70,
+    orbitDirection = 1,
+    isCinematicBars = false,
+    isNoClipEnabled = false,
+    isWallViewEnabled = false
+}
+
+local function loadSavedConfig()
+    if type(_G.KoplingtifySavedConfig) == "table" then
+        for k, v in pairs(_G.KoplingtifySavedConfig) do Config[k] = v end
+    end
+    pcall(function()
+        if type(isfile) == "function" and type(readfile) == "function" and isfile(CONFIG_FILE) then
+            local raw = readfile(CONFIG_FILE)
+            local decoded = HttpService:JSONDecode(raw)
+            if type(decoded) == "table" then
+                for k, v in pairs(decoded) do Config[k] = v end
+            end
+        end
+    end)
+end
+
+local function saveConfig()
+    _G.KoplingtifySavedConfig = Config
+    pcall(function()
+        if type(writefile) == "function" then
+            writefile(CONFIG_FILE, HttpService:JSONEncode(Config))
+        end
+    end)
+end
+
+loadSavedConfig()
+
 local subPalette = {
     {Name = "Putih",  Color = Color3.fromRGB(255, 255, 255)},
     {Name = "Hijau",  Color = Color3.fromRGB(45, 235, 135)},
@@ -105,14 +156,63 @@ local makeButton = UI.MakeButton
 local makeHoldable = UI.MakeHoldable
 local enableDrag = UI.EnableDrag
 
+-- ======================== SMART LYRIC PACING BAR (INJEKSI OTOMATIS) ========================
+-- 1. Pacing Bar di dalam Kartu Lirik Utama (Tepat di bawah kalimat aktif)
+local cardPacingBg = Instance.new("Frame")
+cardPacingBg.Name = "CardPacingBg"
+cardPacingBg.Position = UDim2.new(0, 14, 0, 65)
+cardPacingBg.Size = UDim2.new(1, -28, 0, 3)
+cardPacingBg.BackgroundColor3 = Color3.fromRGB(36, 42, 54)
+cardPacingBg.BorderSizePixel = 0
+cardPacingBg.Parent = lyricCard
+Instance.new("UICorner", cardPacingBg).CornerRadius = UDim.new(1, 0)
+
+local cardPacingFill = Instance.new("Frame")
+cardPacingFill.Name = "Fill"
+cardPacingFill.Size = UDim2.new(0, 0, 1, 0)
+cardPacingFill.BackgroundColor3 = Color3.fromRGB(255, 215, 75)
+cardPacingFill.BorderSizePixel = 0
+cardPacingFill.Parent = cardPacingBg
+Instance.new("UICorner", cardPacingFill).CornerRadius = UDim.new(1, 0)
+
+local pacingGrad = Instance.new("UIGradient", cardPacingFill)
+pacingGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 235, 140)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 215, 75))
+})
+
+-- 2. Pacing Bar di dalam Subtitle HUD Layar
+local subPacingBg = Instance.new("Frame")
+subPacingBg.Name = "SubPacingBg"
+subPacingBg.Position = UDim2.new(0.2, 0, 0, 36)
+subPacingBg.Size = UDim2.new(0.6, 0, 0, 2)
+subPacingBg.BackgroundColor3 = Color3.fromRGB(35, 40, 50)
+subPacingBg.BackgroundTransparency = 0.4
+subPacingBg.BorderSizePixel = 0
+subPacingBg.Parent = subtitleFrame
+Instance.new("UICorner", subPacingBg).CornerRadius = UDim.new(1, 0)
+
+local subPacingFill = Instance.new("Frame")
+subPacingFill.Name = "Fill"
+subPacingFill.Size = UDim2.new(0, 0, 1, 0)
+subPacingFill.BackgroundColor3 = Color3.fromRGB(45, 235, 135)
+subPacingFill.BorderSizePixel = 0
+subPacingFill.Parent = subPacingBg
+Instance.new("UICorner", subPacingFill).CornerRadius = UDim.new(1, 0)
+
+-- ======================== STATE UTAMA DARI AUTO-SAVE ========================
 local cache, transCache = {}, {}
 local activeSound, activeSoundId, activeItem = nil, nil, nil
 local lyrics = {}
 local currentIndex = 0
 local lyricSpeed, syncOffset = 1.0, 0.0
 local manualSpeedOverride, autoSpeedSynced, isAutoRatioActive = false, false, false
-local autoChat, safeFilterEnabled, translateEnabled, romanizeEnabled = false, true, true, true
-local chatLangMode = 1
+
+local autoChat = false
+local safeFilterEnabled = Config.safeFilterEnabled ~= false
+local translateEnabled = Config.translateEnabled ~= false
+local romanizeEnabled = Config.romanizeEnabled ~= false
+local chatLangMode = tonumber(Config.chatLangMode) or 1
 local chatLangNames = {"Asli/Rom", "Indo", "Dual"}
 
 local isMutedLocally, originalVolume = false, 0.5
@@ -120,10 +220,28 @@ local lastSentLine = ""
 local scanToken, transToken = 0, 0
 local isMinimized = false
 
-local isSubtitleEnabled = false
-local subOffsetX, subOffsetY, subTextSize = 0, 0, 20
-local subCinemaBg, subLocked = false, false
-local subColorIndex = 1
+local isSubtitleEnabled = Config.isSubtitleEnabled == true
+local subOffsetX = tonumber(Config.subOffsetX) or 0
+local subOffsetY = tonumber(Config.subOffsetY) or 0
+local subTextSize = tonumber(Config.subTextSize) or 20
+local subCinemaBg = Config.subCinemaBg == true
+local subLocked = Config.subLocked == true
+local subColorIndex = math.clamp(tonumber(Config.subColorIndex) or 1, 1, #subPalette)
+
+local function syncMainConfig()
+    Config.safeFilterEnabled = safeFilterEnabled
+    Config.translateEnabled = translateEnabled
+    Config.romanizeEnabled = romanizeEnabled
+    Config.chatLangMode = chatLangMode
+    Config.isSubtitleEnabled = isSubtitleEnabled
+    Config.subOffsetX = subOffsetX
+    Config.subOffsetY = subOffsetY
+    Config.subTextSize = subTextSize
+    Config.subCinemaBg = subCinemaBg
+    Config.subLocked = subLocked
+    Config.subColorIndex = subColorIndex
+    saveConfig()
+end
 
 enableDrag(subtitleFrame, subtitleFrame, function() return subLocked end)
 
@@ -170,7 +288,7 @@ end
 
 local WorldController = nil
 if WorldOk and type(WorldModule) == "table" and WorldModule.Init then
-    WorldController = WorldModule.Init(UI, showToast)
+    WorldController = WorldModule.Init(UI, showToast, Config, saveConfig)
 end
 
 local function applySubtitleStyle()
@@ -179,10 +297,28 @@ local function applySubtitleStyle()
     subBoxStroke.Transparency = subCinemaBg and 0.45 or 1
     subMainText.TextSize = subTextSize
     subMainText.TextColor3 = subPalette[subColorIndex].Color
+    subPacingFill.BackgroundColor3 = subPalette[subColorIndex].Color
     subTransText.TextSize = math.max(11, subTextSize - 4)
     subNextText.TextSize = math.max(10, subTextSize - 6)
     subTransText.Visible = translateEnabled
 end
+
+-- Terapkan tampilan tombol awal dari hasil Load Config
+subtitleFrame.Visible = isSubtitleEnabled
+subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(36, 42, 52)
+subBgBtn.Text = "🎬 Kotak Cinema: " .. (subCinemaBg and "ON" or "OFF")
+subBgBtn.BackgroundColor3 = subCinemaBg and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 42, 52)
+subColorBtn.Text = "🎨 Warna: " .. subPalette[subColorIndex].Name
+subColorBtn.TextColor3 = subPalette[subColorIndex].Color
+subLockBtn.Text = subLocked and "🔒 Drag Sub: Terkunci" or "🔓 Drag Sub: Bebas"
+subLockBtn.BackgroundColor3 = subLocked and Color3.fromRGB(165, 85, 45) or Color3.fromRGB(36, 42, 52)
+chatModeBtn.Text = "🗣️ Chat: " .. chatLangNames[chatLangMode]
+transToggleBtn.Text = "🌍 Indo: " .. (translateEnabled and "ON" or "OFF")
+transToggleBtn.BackgroundColor3 = translateEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
+romToggleBtn.Text = "🔤 Latin: " .. (romanizeEnabled and "ON" or "OFF")
+romToggleBtn.BackgroundColor3 = romanizeEnabled and Color3.fromRGB(185, 135, 35) or Color3.fromRGB(36, 41, 50)
+filterBtn.Text = "🛡 Sensor: " .. (safeFilterEnabled and "ON" or "OFF")
+filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
 
 local subUiUpdaters = {}
 local function createSubSettingRow(yPos, labelText, formatStr, getVal, setVal, step, minVal, maxVal)
@@ -207,10 +343,12 @@ local function createSubSettingRow(yPos, labelText, formatStr, getVal, setVal, s
     makeHoldable(btnMinus, function()
         setVal(math.clamp(getVal() - step, minVal, maxVal))
         refresh()
+        syncMainConfig()
     end)
     makeHoldable(btnPlus, function()
         setVal(math.clamp(getVal() + step, minVal, maxVal))
         refresh()
+        syncMainConfig()
     end)
 end
 
@@ -223,6 +361,7 @@ subBgBtn.MouseButton1Click:Connect(function()
     subBgBtn.Text = "🎬 Kotak Cinema: " .. (subCinemaBg and "ON" or "OFF")
     subBgBtn.BackgroundColor3 = subCinemaBg and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 42, 52)
     applySubtitleStyle()
+    syncMainConfig()
 end)
 
 subColorBtn.MouseButton1Click:Connect(function()
@@ -230,12 +369,14 @@ subColorBtn.MouseButton1Click:Connect(function()
     subColorBtn.Text = "🎨 Warna: " .. subPalette[subColorIndex].Name
     subColorBtn.TextColor3 = subPalette[subColorIndex].Color
     applySubtitleStyle()
+    syncMainConfig()
 end)
 
 subLockBtn.MouseButton1Click:Connect(function()
     subLocked = not subLocked
     subLockBtn.Text = subLocked and "🔒 Drag Sub: Terkunci" or "🔓 Drag Sub: Bebas"
     subLockBtn.BackgroundColor3 = subLocked and Color3.fromRGB(165, 85, 45) or Color3.fromRGB(36, 42, 52)
+    syncMainConfig()
 end)
 
 subResetBtn.MouseButton1Click:Connect(function()
@@ -246,6 +387,7 @@ subResetBtn.MouseButton1Click:Connect(function()
     subColorBtn.Text = "🎨 Warna: Putih"
     subColorBtn.TextColor3 = Color3.fromRGB(245, 245, 245)
     for _, fn in ipairs(subUiUpdaters) do fn() end
+    syncMainConfig()
     showToast("Posisi & gaya Subtitle direset!")
 end)
 
@@ -253,6 +395,7 @@ subToggleBtn.MouseButton1Click:Connect(function()
     isSubtitleEnabled = not isSubtitleEnabled
     subtitleFrame.Visible = isSubtitleEnabled
     subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(36, 42, 52)
+    syncMainConfig()
     showToast("Subtitle Layar " .. (isSubtitleEnabled and "ON" or "OFF"))
 end)
 
@@ -691,6 +834,7 @@ end)
 chatModeBtn.MouseButton1Click:Connect(function()
     chatLangMode = (chatLangMode % 3) + 1
     chatModeBtn.Text = "🗣️ Chat: " .. chatLangNames[chatLangMode]
+    syncMainConfig()
     showToast("Mode Bahasa Chat: " .. chatLangNames[chatLangMode])
 end)
 
@@ -699,6 +843,7 @@ transToggleBtn.MouseButton1Click:Connect(function()
     transToggleBtn.Text = "🌍 Indo: " .. (translateEnabled and "ON" or "OFF")
     transToggleBtn.BackgroundColor3 = translateEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
     applySubtitleStyle()
+    syncMainConfig()
     if translateEnabled and #lyrics > 0 then
         transToken += 1
         prefetchTranslations(lyrics, transToken)
@@ -710,6 +855,7 @@ romToggleBtn.MouseButton1Click:Connect(function()
     romanizeEnabled = not romanizeEnabled
     romToggleBtn.Text = "🔤 Latin: " .. (romanizeEnabled and "ON" or "OFF")
     romToggleBtn.BackgroundColor3 = romanizeEnabled and Color3.fromRGB(185, 135, 35) or Color3.fromRGB(36, 41, 50)
+    syncMainConfig()
     if romanizeEnabled and #lyrics > 0 then
         transToken += 1
         prefetchTranslations(lyrics, transToken)
@@ -721,6 +867,7 @@ filterBtn.MouseButton1Click:Connect(function()
     safeFilterEnabled = not safeFilterEnabled
     filterBtn.Text = "🛡 Sensor: " .. (safeFilterEnabled and "ON" or "OFF")
     filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
+    syncMainConfig()
     refreshCurrentLyricDisplay(false)
 end)
 
@@ -739,6 +886,9 @@ local function activateResult(item, selectedBtn)
     currentIndex = 0
     lastSentLine = ""
     autoSpeedSynced, isAutoRatioActive = false, false
+
+    cardPacingFill.Size = UDim2.new(0, 0, 1, 0)
+    subPacingFill.Size = UDim2.new(0, 0, 1, 0)
 
     for _, btn in ipairs(resultButtons) do
         btn.BackgroundColor3 = (btn == selectedBtn) and Color3.fromRGB(35, 145, 85) or Color3.fromRGB(32, 37, 46)
@@ -871,6 +1021,8 @@ task.spawn(function()
 
             progBarFill.Size = UDim2.new(0, 0, 1, 0)
             islandProgFill.Size = UDim2.new(0, 0, 1, 0)
+            cardPacingFill.Size = UDim2.new(0, 0, 1, 0)
+            subPacingFill.Size = UDim2.new(0, 0, 1, 0)
             timeCurrentLbl.Text = "00:00"
             timeTotalLbl.Text = "00:00"
 
@@ -920,6 +1072,8 @@ task.spawn(function()
             status.Text = "Menunggu musik diputar..."
             progBarFill.Size = UDim2.new(0, 0, 1, 0)
             islandProgFill.Size = UDim2.new(0, 0, 1, 0)
+            cardPacingFill.Size = UDim2.new(0, 0, 1, 0)
+            subPacingFill.Size = UDim2.new(0, 0, 1, 0)
             timeCurrentLbl.Text = "00:00"
             timeTotalLbl.Text = "00:00"
         end
@@ -968,6 +1122,19 @@ RunService.Heartbeat:Connect(function()
         end
     end
 
+    -- Kalkulasi Real-Time Smart Lyric Pacing Bar (Durasi Baris Saat Ini ke Baris Berikutnya)
+    if found > 0 and lyrics[found] then
+        local startT = lyrics[found].Time
+        local nextT = (lyrics[found + 1] and lyrics[found + 1].Time) or math.max(startT + 4, totTime * lyricSpeed)
+        local span = math.max(0.15, nextT - startT)
+        local lineRatio = math.clamp((position - startT) / span, 0, 1)
+        cardPacingFill.Size = UDim2.new(lineRatio, 0, 1, 0)
+        subPacingFill.Size = UDim2.new(lineRatio, 0, 1, 0)
+    else
+        cardPacingFill.Size = UDim2.new(0, 0, 1, 0)
+        subPacingFill.Size = UDim2.new(0, 0, 1, 0)
+    end
+
     if found > 0 and found ~= currentIndex then
         currentIndex = found
         local line = lyrics[found]
@@ -1006,5 +1173,5 @@ RunService.Heartbeat:Connect(function()
 end)
 
 applySubtitleStyle()
-showToast("Koplingtify Lite v2.5 siap digunakan!")
-print("Koplingtify Lite v2.5 Modular (UI + Filter + World + Sync) loaded.")
+showToast("Koplingtify Lite v2.5 (Auto-Save & Pacing Bar) siap!")
+print("Koplingtify Lite v2.5 Modular loaded.")
