@@ -24,11 +24,15 @@ local subPalette = {
     {Name = "Ungu",   Color = Color3.fromRGB(195, 145, 255)}
 }
 
--- Load Modul UI & Modul Filter dari GitHub
 local REPO_BASE = "https://raw.githubusercontent.com/rifandiif1/KOPLINGFY/main/"
-local UIModule = loadstring(game:HttpGet(REPO_BASE .. "KOPLINGTIFY_UI.luau"))()
+local Modules = _G.KoplingtifyModules or {}
+
+local UIModule = Modules.UI or loadstring(game:HttpGet(REPO_BASE .. "KOPLINGTIFY_UI.luau"))()
 local FilterOk, FilterModule = pcall(function()
-    return loadstring(game:HttpGet(REPO_BASE .. "KOPLINGTIFY_FILTER.luau"))()
+    return Modules.Filter or loadstring(game:HttpGet(REPO_BASE .. "KOPLINGTIFY_FILTER.luau"))()
+end)
+local WorldOk, WorldModule = pcall(function()
+    return Modules.World or loadstring(game:HttpGet(REPO_BASE .. "KOPLINGTIFY_WORLD.luau"))()
 end)
 
 local UI = UIModule.Create({SubPalette = subPalette})
@@ -48,7 +52,6 @@ local subTransText = UI.SubTransText
 local subNextText = UI.SubNextText
 local topBar = UI.TopBar
 local status = UI.Status
-local orbitBtn = UI.OrbitBtn
 local subToggleBtn = UI.SubToggleBtn
 local muteBtn = UI.MuteBtn
 local pillModeBtn = UI.PillModeBtn
@@ -89,15 +92,6 @@ local fasterBtn = UI.FasterBtn
 local offsetBackBtn = UI.OffsetBackBtn
 local offsetForwardBtn = UI.OffsetForwardBtn
 local resetSyncBtn = UI.ResetSyncBtn
-local userSearchBox = UI.UserSearchBox
-local clearUserBtn = UI.ClearUserBtn
-local refreshUserBtn = UI.RefreshUserBtn
-local userListFrame = UI.UserListFrame
-local userListLayout = UI.UserListLayout
-local stopTrackBtn = UI.StopTrackBtn
-local tpTrackBtn = UI.TpTrackBtn
-local noclipBtn = UI.NoclipBtn
-local wallViewBtn = UI.WallViewBtn
 local orbitCfgBtn = UI.OrbitCfgBtn
 local subCfgCard = UI.SubCfgCard
 local subBgBtn = UI.SubBgBtn
@@ -105,10 +99,6 @@ local subColorBtn = UI.SubColorBtn
 local subLockBtn = UI.SubLockBtn
 local subResetBtn = UI.SubResetBtn
 local orbitPanel = UI.OrbitPanel
-local closeOrbitPanelBtn = UI.CloseOrbitPanelBtn
-local orbitToggleInsideBtn = UI.OrbitToggleInsideBtn
-local orbitDirBtn = UI.OrbitDirBtn
-local orbitResetBtn = UI.OrbitResetBtn
 
 local makeLabel = UI.MakeLabel
 local makeButton = UI.MakeButton
@@ -134,17 +124,6 @@ local isSubtitleEnabled = false
 local subOffsetX, subOffsetY, subTextSize = 0, 0, 20
 local subCinemaBg, subLocked = false, false
 local subColorIndex = 1
-
-local isNoClipEnabled, isWallViewEnabled = false, false
-local savedCanCollide, fadedWallParts = {}, {}
-local origOcclusionMode = player.DevCameraOcclusionMode
-
-local isOrbitEnabled, wasOrbitCam = false, false
-local orbitAngle, orbitDistance, orbitHeight = 0, 10.0, 3.5
-local orbitSpeed, orbitLookHeight, orbitFOV, orbitDirection = 0.55, 1.0, 70, 1
-local savedDefaultFOV = (workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView) or 70
-
-local trackedPlayer, trackerHighlight, trackerBillboard, trackerNameLbl, trackerBeam, trackerAtt0, trackerAtt1 = nil, nil, nil, nil, nil, nil, nil
 
 enableDrag(subtitleFrame, subtitleFrame, function() return subLocked end)
 
@@ -187,6 +166,11 @@ local function showToast(msg, bgColor)
             }):Play()
         end
     end)
+end
+
+local WorldController = nil
+if WorldOk and type(WorldModule) == "table" and WorldModule.Init then
+    WorldController = WorldModule.Init(UI, showToast)
 end
 
 local function applySubtitleStyle()
@@ -234,42 +218,106 @@ createSubSettingRow(26, "Ukuran Font Sub:", "%d px", function() return subTextSi
 createSubSettingRow(58, "Geser Kiri/Kanan X:", "%+d", function() return subOffsetX end, function(v) subOffsetX = v end, 10, -500, 500)
 createSubSettingRow(90, "Geser Atas/Bawah Y:", "%+d", function() return subOffsetY end, function(v) subOffsetY = v end, 10, -500, 300)
 
-local orbitUiUpdaters = {}
-local function createOrbitSettingRow(yPos, labelText, formatStr, getVal, setVal, step, minVal, maxVal)
-    local lbl = makeLabel(orbitPanel, labelText, UDim2.new(0, 12, 0, yPos), UDim2.new(0, 125, 0, 26), labelText, 11, Color3.fromRGB(210, 215, 225))
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
+subBgBtn.MouseButton1Click:Connect(function()
+    subCinemaBg = not subCinemaBg
+    subBgBtn.Text = "🎬 Kotak Cinema: " .. (subCinemaBg and "ON" or "OFF")
+    subBgBtn.BackgroundColor3 = subCinemaBg and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 42, 52)
+    applySubtitleStyle()
+end)
 
-    local btnMinus = makeButton(orbitPanel, "−", UDim2.new(0, 142, 0, yPos), UDim2.new(0, 32, 0, 26), Color3.fromRGB(40, 46, 56))
-    btnMinus.TextSize = 15
+subColorBtn.MouseButton1Click:Connect(function()
+    subColorIndex = (subColorIndex % #subPalette) + 1
+    subColorBtn.Text = "🎨 Warna: " .. subPalette[subColorIndex].Name
+    subColorBtn.TextColor3 = subPalette[subColorIndex].Color
+    applySubtitleStyle()
+end)
 
-    local valLbl = makeLabel(orbitPanel, "Val", UDim2.new(0, 176, 0, yPos), UDim2.new(0, 56, 0, 26), string.format(formatStr, getVal()), 11, Color3.fromRGB(205, 165, 255))
-    valLbl.Font = Enum.Font.GothamBold
+subLockBtn.MouseButton1Click:Connect(function()
+    subLocked = not subLocked
+    subLockBtn.Text = subLocked and "🔒 Drag Sub: Terkunci" or "🔓 Drag Sub: Bebas"
+    subLockBtn.BackgroundColor3 = subLocked and Color3.fromRGB(165, 85, 45) or Color3.fromRGB(36, 42, 52)
+end)
 
-    local btnPlus = makeButton(orbitPanel, "+", UDim2.new(0, 236, 0, yPos), UDim2.new(0, 32, 0, 26), Color3.fromRGB(40, 46, 56))
-    btnPlus.TextSize = 15
+subResetBtn.MouseButton1Click:Connect(function()
+    subOffsetX, subOffsetY, subTextSize = 0, 0, 20
+    subCinemaBg, subColorIndex = false, 1
+    subBgBtn.Text = "🎬 Kotak Cinema: OFF"
+    subBgBtn.BackgroundColor3 = Color3.fromRGB(36, 42, 52)
+    subColorBtn.Text = "🎨 Warna: Putih"
+    subColorBtn.TextColor3 = Color3.fromRGB(245, 245, 245)
+    for _, fn in ipairs(subUiUpdaters) do fn() end
+    showToast("Posisi & gaya Subtitle direset!")
+end)
 
-    local function refresh()
-        valLbl.Text = string.format(formatStr, getVal())
+subToggleBtn.MouseButton1Click:Connect(function()
+    isSubtitleEnabled = not isSubtitleEnabled
+    subtitleFrame.Visible = isSubtitleEnabled
+    subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(36, 42, 52)
+    showToast("Subtitle Layar " .. (isSubtitleEnabled and "ON" or "OFF"))
+end)
+
+local function setMinimizeIsland(state)
+    isMinimized = state
+    if isMinimized then
+        topBar.Visible = false
+        body.Visible = false
+        toastBanner.Visible = false
+        islandBar.Visible = true
+        mainCorner.CornerRadius = UDim.new(1, 0)
+        TweenService:Create(main, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = ISLAND_SIZE
+        }):Play()
+    else
+        islandBar.Visible = false
+        topBar.Visible = true
+        body.Visible = true
+        toastBanner.Visible = true
+        mainCorner.CornerRadius = UDim.new(0, 16)
+        TweenService:Create(main, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = FULL_SIZE
+        }):Play()
     end
-    table.insert(orbitUiUpdaters, refresh)
-
-    makeHoldable(btnMinus, function()
-        local nv = math.clamp(math.floor((getVal() - step) * 100 + 0.5) / 100, minVal, maxVal)
-        setVal(nv)
-        refresh()
-    end)
-    makeHoldable(btnPlus, function()
-        local nv = math.clamp(math.floor((getVal() + step) * 100 + 0.5) / 100, minVal, maxVal)
-        setVal(nv)
-        refresh()
-    end)
 end
 
-createOrbitSettingRow(78,  "Jarak (Stud):",    "%.1f",  function() return orbitDistance end,   function(v) orbitDistance = v end,   0.5,  2.0,  60.0)
-createOrbitSettingRow(110, "Ketinggian (Y):",  "%.1f",  function() return orbitHeight end,     function(v) orbitHeight = v end,     0.5, -10.0, 35.0)
-createOrbitSettingRow(142, "Kecepatan Putar:", "%.2fx", function() return orbitSpeed end,      function(v) orbitSpeed = v end,      0.05, 0.0,  5.0)
-createOrbitSettingRow(174, "Titik Fokus (Y):", "%.1f",  function() return orbitLookHeight end, function(v) orbitLookHeight = v end, 0.5, -5.0,  10.0)
-createOrbitSettingRow(206, "Sudut Lensa FOV:", "%d°",   function() return orbitFOV end,        function(v) orbitFOV = v end,        2,    20,   120)
+minBtn.MouseButton1Click:Connect(function() setMinimizeIsland(true) end)
+islandExpandBtn.MouseButton1Click:Connect(function() setMinimizeIsland(false) end)
+
+local function enterPillMode()
+    main.Visible = false
+    orbitPanel.Visible = false
+    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(52, 44, 72)
+    floatBtn.Visible = true
+end
+
+pillModeBtn.MouseButton1Click:Connect(enterPillMode)
+islandPillBtn.MouseButton1Click:Connect(enterPillMode)
+
+floatBtn.MouseButton1Click:Connect(function()
+    floatBtn.Visible = false
+    main.Visible = true
+end)
+
+muteBtn.MouseButton1Click:Connect(function()
+    isMutedLocally = not isMutedLocally
+    muteBtn.Text = isMutedLocally and "🔇" or "🔊"
+    muteBtn.BackgroundColor3 = isMutedLocally and Color3.fromRGB(135, 55, 55) or Color3.fromRGB(36, 42, 52)
+    if activeSound then
+        if isMutedLocally then
+            originalVolume = activeSound.Volume > 0 and activeSound.Volume or originalVolume
+            activeSound.Volume = 0
+        else
+            activeSound.Volume = originalVolume
+        end
+    end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    if isMutedLocally and activeSound then activeSound.Volume = originalVolume end
+    if WorldController and WorldController.Cleanup then
+        WorldController.Cleanup()
+    end
+    gui:Destroy()
+end)
 
 local function normalizeRomanizedASCII(str)
     if not str or str == "" then return "" end
@@ -483,361 +531,6 @@ local function findSound()
     return best
 end
 
--- ======================== PLAYER LOCATOR ESP ========================
-local function clearPlayerLocator()
-    trackedPlayer = nil
-    if trackerHighlight then pcall(function() trackerHighlight:Destroy() end); trackerHighlight = nil end
-    if trackerBillboard then pcall(function() trackerBillboard:Destroy() end); trackerBillboard = nil end
-    if trackerBeam then pcall(function() trackerBeam:Destroy() end); trackerBeam = nil end
-    if trackerAtt0 then pcall(function() trackerAtt0:Destroy() end); trackerAtt0 = nil end
-    if trackerAtt1 then pcall(function() trackerAtt1:Destroy() end); trackerAtt1 = nil end
-    trackerNameLbl = nil
-end
-
-local function createLocatorForPlayer(targetPlr)
-    clearPlayerLocator()
-    if not targetPlr or targetPlr == player then return end
-    trackedPlayer = targetPlr
-
-    local hl = Instance.new("Highlight")
-    hl.Name = "KoplingTrackerHL"
-    hl.FillColor = Color3.fromRGB(35, 235, 135)
-    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-    hl.FillTransparency = 0.45
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Parent = gui
-    trackerHighlight = hl
-
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "KoplingTrackerBB"
-    bb.Size = UDim2.new(0, 200, 0, 52)
-    bb.StudsOffset = Vector3.new(0, 3.8, 0)
-    bb.AlwaysOnTop = true
-    bb.Parent = gui
-    trackerBillboard = bb
-
-    local badge = Instance.new("Frame")
-    badge.Size = UDim2.new(1, 0, 1, 0)
-    badge.BackgroundColor3 = Color3.fromRGB(16, 20, 28)
-    badge.BackgroundTransparency = 0.15
-    badge.BorderSizePixel = 0
-    badge.Parent = bb
-    Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 8)
-    local bStroke = Instance.new("UIStroke", badge)
-    bStroke.Color = Color3.fromRGB(40, 235, 140)
-    bStroke.Thickness = 1.5
-
-    local lbl = makeLabel(badge, "Info", UDim2.new(0, 6, 0, 2), UDim2.new(1, -12, 1, -4), "📍 " .. targetPlr.DisplayName, 11, Color3.fromRGB(255, 255, 255))
-    lbl.Font = Enum.Font.GothamBold
-    trackerNameLbl = lbl
-
-    local beam = Instance.new("Beam")
-    beam.Name = "KoplingTrackerBeam"
-    beam.FaceCamera = true
-    beam.Color = ColorSequence.new(Color3.fromRGB(40, 235, 140), Color3.fromRGB(80, 195, 255))
-    beam.Width0 = 0.18
-    beam.Width1 = 0.18
-    beam.Transparency = NumberSequence.new(0.15)
-    beam.LightEmission = 1
-    beam.Parent = gui
-    trackerBeam = beam
-end
-
-local function refreshPlayerList()
-    for _, child in ipairs(userListFrame:GetChildren()) do
-        if child:IsA("TextButton") then child:Destroy() end
-    end
-
-    local filterTxt = string.lower(userSearchBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    local allPlayers = Players:GetPlayers()
-    local order = 0
-
-    for _, plr in ipairs(allPlayers) do
-        if plr ~= player then
-            local uName = plr.Name or ""
-            local dName = plr.DisplayName or uName
-            local matchStr = string.lower(dName .. " " .. uName)
-            if filterTxt == "" or matchStr:find(filterTxt, 1, true) then
-                order += 1
-                local distStr = ""
-                local myHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                local tHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-                if myHrp and tHrp then
-                    distStr = string.format(" • %dm", math.floor((myHrp.Position - tHrp.Position).Magnitude))
-                end
-
-                local isSelected = (trackedPlayer == plr)
-                local btnBg = isSelected and Color3.fromRGB(35, 150, 90) or Color3.fromRGB(32, 37, 46)
-                local b = makeButton(userListFrame, string.format("  📍 %s (@%s)%s", dName, uName, distStr), UDim2.new(), UDim2.new(1, -6, 0, 32), btnBg)
-                b.LayoutOrder = order
-                b.TextXAlignment = Enum.TextXAlignment.Left
-                b.TextTruncate = Enum.TextTruncate.AtEnd
-
-                b.MouseButton1Click:Connect(function()
-                    if trackedPlayer == plr then
-                        clearPlayerLocator()
-                        showToast("Pelacak lokasi dimatikan.")
-                    else
-                        createLocatorForPlayer(plr)
-                        showToast("Melacak lokasi: " .. dName)
-                    end
-                    refreshPlayerList()
-                end)
-            end
-        end
-    end
-
-    task.defer(function()
-        userListFrame.CanvasSize = UDim2.new(0, 0, 0, userListLayout.AbsoluteContentSize.Y + 6)
-    end)
-end
-
-clearUserBtn.MouseButton1Click:Connect(function()
-    userSearchBox.Text = ""
-    refreshPlayerList()
-end)
-refreshUserBtn.MouseButton1Click:Connect(refreshPlayerList)
-userSearchBox:GetPropertyChangedSignal("Text"):Connect(refreshPlayerList)
-
-stopTrackBtn.MouseButton1Click:Connect(function()
-    clearPlayerLocator()
-    refreshPlayerList()
-    showToast("Pelacak lokasi dimatikan.")
-end)
-
-tpTrackBtn.MouseButton1Click:Connect(function()
-    if not trackedPlayer or not trackedPlayer.Character then
-        showToast("Pilih user di daftar terlebih dahulu!", Color3.fromRGB(165, 65, 55))
-        return
-    end
-    local myHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    local tHrp = trackedPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if myHrp and tHrp then
-        myHrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, 3)
-        showToast("Teleport ke " .. trackedPlayer.DisplayName)
-    end
-end)
-
-Players.PlayerAdded:Connect(function() task.delay(0.5, refreshPlayerList) end)
-Players.PlayerRemoving:Connect(function(plr)
-    if plr == trackedPlayer then clearPlayerLocator() end
-    task.delay(0.2, refreshPlayerList)
-end)
-refreshPlayerList()
-
--- ======================== KONTROL SUBTITLE, ORBIT, NOCLIP & TEMBOK ========================
-subBgBtn.MouseButton1Click:Connect(function()
-    subCinemaBg = not subCinemaBg
-    subBgBtn.Text = "🎬 Kotak Cinema: " .. (subCinemaBg and "ON" or "OFF")
-    subBgBtn.BackgroundColor3 = subCinemaBg and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 42, 52)
-    applySubtitleStyle()
-end)
-
-subColorBtn.MouseButton1Click:Connect(function()
-    subColorIndex = (subColorIndex % #subPalette) + 1
-    subColorBtn.Text = "🎨 Warna: " .. subPalette[subColorIndex].Name
-    subColorBtn.TextColor3 = subPalette[subColorIndex].Color
-    applySubtitleStyle()
-end)
-
-subLockBtn.MouseButton1Click:Connect(function()
-    subLocked = not subLocked
-    subLockBtn.Text = subLocked and "🔒 Drag Sub: Terkunci" or "🔓 Drag Sub: Bebas"
-    subLockBtn.BackgroundColor3 = subLocked and Color3.fromRGB(165, 85, 45) or Color3.fromRGB(36, 42, 52)
-end)
-
-subResetBtn.MouseButton1Click:Connect(function()
-    subOffsetX, subOffsetY, subTextSize = 0, 0, 20
-    subCinemaBg, subColorIndex = false, 1
-    subBgBtn.Text = "🎬 Kotak Cinema: OFF"
-    subBgBtn.BackgroundColor3 = Color3.fromRGB(36, 42, 52)
-    subColorBtn.Text = "🎨 Warna: Putih"
-    subColorBtn.TextColor3 = Color3.fromRGB(245, 245, 245)
-    for _, fn in ipairs(subUiUpdaters) do fn() end
-    showToast("Posisi & gaya Subtitle direset!")
-end)
-
-orbitDirBtn.MouseButton1Click:Connect(function()
-    orbitDirection = -orbitDirection
-    orbitDirBtn.Text = orbitDirection == 1 and "🔄 Arah: Kanan" or "🔄 Arah: Kiri"
-end)
-
-orbitResetBtn.MouseButton1Click:Connect(function()
-    orbitDistance, orbitHeight, orbitSpeed = 10.0, 3.5, 0.55
-    orbitLookHeight, orbitFOV, orbitDirection = 1.0, 70, 1
-    orbitDirBtn.Text = "🔄 Arah: Kanan"
-    for _, fn in ipairs(orbitUiUpdaters) do fn() end
-end)
-
-local function restoreCharacterCollision()
-    for part, canCol in pairs(savedCanCollide) do
-        if part and part.Parent then part.CanCollide = canCol end
-    end
-    savedCanCollide = {}
-end
-
-local function restoreFadedWalls()
-    for part, origLTM in pairs(fadedWallParts) do
-        if part and part.Parent then part.LocalTransparencyModifier = origLTM end
-    end
-    fadedWallParts = {}
-end
-
-local function applyWallOcclusionMode()
-    pcall(function()
-        if isWallViewEnabled then
-            player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
-        else
-            player.DevCameraOcclusionMode = origOcclusionMode
-            restoreFadedWalls()
-        end
-    end)
-end
-
-noclipBtn.MouseButton1Click:Connect(function()
-    isNoClipEnabled = not isNoClipEnabled
-    noclipBtn.Text = "👻 NoClip: " .. (isNoClipEnabled and "ON" or "OFF")
-    noclipBtn.BackgroundColor3 = isNoClipEnabled and Color3.fromRGB(205, 115, 45) or Color3.fromRGB(36, 41, 50)
-    if not isNoClipEnabled then restoreCharacterCollision() end
-    showToast("NoClip " .. (isNoClipEnabled and "Diaktifkan" or "Dimatikan"))
-end)
-
-wallViewBtn.MouseButton1Click:Connect(function()
-    isWallViewEnabled = not isWallViewEnabled
-    wallViewBtn.Text = "🧱 Tembok: " .. (isWallViewEnabled and "ON" or "OFF")
-    wallViewBtn.BackgroundColor3 = isWallViewEnabled and Color3.fromRGB(50, 140, 210) or Color3.fromRGB(36, 41, 50)
-    applyWallOcclusionMode()
-    showToast("View Tembok Transparan " .. (isWallViewEnabled and "ON" or "OFF"))
-end)
-
-RunService.Stepped:Connect(function()
-    if not gui.Parent or not isNoClipEnabled then return end
-    local char = player.Character
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if savedCanCollide[part] == nil then
-                savedCanCollide[part] = part.CanCollide
-            end
-            part.CanCollide = false
-        end
-    end
-end)
-
-local function resetCameraToNormal()
-    local cam = workspace.CurrentCamera
-    local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-    if cam then
-        cam.CameraType = Enum.CameraType.Custom
-        cam.FieldOfView = savedDefaultFOV
-        if hum then cam.CameraSubject = hum end
-    end
-end
-
-local function updateOrbitButtonVisuals()
-    orbitBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(36, 42, 52)
-    orbitToggleInsideBtn.Text = "Status Orbit: " .. (isOrbitEnabled and "ON (Aktif)" or "OFF (Mati)")
-    orbitToggleInsideBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(135, 75, 205) or Color3.fromRGB(39, 45, 55)
-end
-
-local function toggleOrbitState()
-    isOrbitEnabled = not isOrbitEnabled
-    if isOrbitEnabled then
-        local cam = workspace.CurrentCamera
-        if cam then savedDefaultFOV = cam.FieldOfView end
-    else
-        resetCameraToNormal()
-    end
-    updateOrbitButtonVisuals()
-    showToast("Kamera Orbit " .. (isOrbitEnabled and "ON" or "OFF"), Color3.fromRGB(140, 85, 215))
-end
-
-orbitBtn.MouseButton1Click:Connect(toggleOrbitState)
-orbitToggleInsideBtn.MouseButton1Click:Connect(toggleOrbitState)
-
-orbitCfgBtn.MouseButton1Click:Connect(function()
-    orbitPanel.Visible = not orbitPanel.Visible
-    orbitCfgBtn.BackgroundColor3 = orbitPanel.Visible and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(52, 44, 72)
-end)
-
-closeOrbitPanelBtn.MouseButton1Click:Connect(function()
-    orbitPanel.Visible = false
-    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(52, 44, 72)
-end)
-
-subToggleBtn.MouseButton1Click:Connect(function()
-    isSubtitleEnabled = not isSubtitleEnabled
-    subtitleFrame.Visible = isSubtitleEnabled
-    subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(36, 42, 52)
-    showToast("Subtitle Layar " .. (isSubtitleEnabled and "ON" or "OFF"))
-end)
-
-local function setMinimizeIsland(state)
-    isMinimized = state
-    if isMinimized then
-        topBar.Visible = false
-        body.Visible = false
-        toastBanner.Visible = false
-        islandBar.Visible = true
-        mainCorner.CornerRadius = UDim.new(1, 0)
-        TweenService:Create(main, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = ISLAND_SIZE
-        }):Play()
-    else
-        islandBar.Visible = false
-        topBar.Visible = true
-        body.Visible = true
-        toastBanner.Visible = true
-        mainCorner.CornerRadius = UDim.new(0, 16)
-        TweenService:Create(main, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = FULL_SIZE
-        }):Play()
-    end
-end
-
-minBtn.MouseButton1Click:Connect(function() setMinimizeIsland(true) end)
-islandExpandBtn.MouseButton1Click:Connect(function() setMinimizeIsland(false) end)
-
-local function enterPillMode()
-    main.Visible = false
-    orbitPanel.Visible = false
-    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(52, 44, 72)
-    floatBtn.Visible = true
-end
-
-pillModeBtn.MouseButton1Click:Connect(enterPillMode)
-islandPillBtn.MouseButton1Click:Connect(enterPillMode)
-
-floatBtn.MouseButton1Click:Connect(function()
-    floatBtn.Visible = false
-    main.Visible = true
-end)
-
-muteBtn.MouseButton1Click:Connect(function()
-    isMutedLocally = not isMutedLocally
-    muteBtn.Text = isMutedLocally and "🔇" or "🔊"
-    muteBtn.BackgroundColor3 = isMutedLocally and Color3.fromRGB(135, 55, 55) or Color3.fromRGB(36, 42, 52)
-    if activeSound then
-        if isMutedLocally then
-            originalVolume = activeSound.Volume > 0 and activeSound.Volume or originalVolume
-            activeSound.Volume = 0
-        else
-            activeSound.Volume = originalVolume
-        end
-    end
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-    if isMutedLocally and activeSound then activeSound.Volume = originalVolume end
-    if isOrbitEnabled then isOrbitEnabled = false; resetCameraToNormal() end
-    if isNoClipEnabled then isNoClipEnabled = false; restoreCharacterCollision() end
-    if isWallViewEnabled then isWallViewEnabled = false; applyWallOcclusionMode() end
-    clearPlayerLocator()
-    gui:Destroy()
-end)
-
--- ======================== SINKRONISASI & SPEED CONTROL ========================
 local function updateSyncText()
     local modeTag = isAutoRatioActive and " (Auto)" or ""
     syncInfo.Text = string.format("Kecepatan: %.2fx%s   •   Offset: %+.2fs", lyricSpeed, modeTag, syncOffset)
@@ -905,7 +598,6 @@ resetSyncBtn.MouseButton1Click:Connect(function()
 end)
 updateSyncText()
 
--- ======================== TAMPILAN LIRIK & CHAT ========================
 local function buildChatLine(origTxt, indoTxt, romTxt)
     local baseTxt = (romanizeEnabled and romTxt and romTxt ~= "") and romTxt or (origTxt or "")
     local cleanOrig = sanitizeLyricText(baseTxt)
@@ -1237,79 +929,8 @@ end)
 
 RunService.RenderStepped:Connect(function(dt)
     if not gui.Parent then return end
-
     if isMinimized and activeSound and activeSound.IsPlaying then
         islandDisc.Rotation = (islandDisc.Rotation + dt * 90) % 360
-    end
-
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local cam = workspace.CurrentCamera
-
-    if trackedPlayer and trackedPlayer.Parent then
-        local tChar = trackedPlayer.Character
-        local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
-        local tHead = tChar and (tChar:FindFirstChild("Head") or tHrp)
-        if tChar and tHrp then
-            if trackerHighlight then trackerHighlight.Adornee = tChar end
-            if trackerBillboard then trackerBillboard.Adornee = tHead end
-            local dist = hrp and math.floor((hrp.Position - tHrp.Position).Magnitude) or 0
-            if trackerNameLbl then
-                trackerNameLbl.Text = string.format("📍 %s (@%s)\nJarak: %d Stud", trackedPlayer.DisplayName, trackedPlayer.Name, dist)
-            end
-            if hrp and trackerBeam then
-                if not trackerAtt0 or trackerAtt0.Parent ~= hrp then
-                    if trackerAtt0 then pcall(function() trackerAtt0:Destroy() end) end
-                    trackerAtt0 = Instance.new("Attachment", hrp)
-                end
-                if not trackerAtt1 or trackerAtt1.Parent ~= tHrp then
-                    if trackerAtt1 then pcall(function() trackerAtt1:Destroy() end) end
-                    trackerAtt1 = Instance.new("Attachment", tHrp)
-                end
-                trackerBeam.Attachment0 = trackerAtt0
-                trackerBeam.Attachment1 = trackerAtt1
-                trackerBeam.Enabled = true
-            end
-        else
-            if trackerHighlight then trackerHighlight.Adornee = nil end
-            if trackerBillboard then trackerBillboard.Adornee = nil end
-            if trackerBeam then trackerBeam.Enabled = false end
-        end
-    end
-
-    if isOrbitEnabled and hrp and hum and cam then
-        cam.CameraType = Enum.CameraType.Scriptable
-        cam.FieldOfView = cam.FieldOfView + (orbitFOV - cam.FieldOfView) * math.clamp(dt * 10, 0, 1)
-
-        orbitAngle = orbitAngle + (dt * orbitSpeed * orbitDirection)
-        local offset = Vector3.new(
-            math.cos(orbitAngle) * orbitDistance,
-            orbitHeight,
-            math.sin(orbitAngle) * orbitDistance
-        )
-        local orbitPos = hrp.Position + offset
-        local lookAtPos = hrp.Position + Vector3.new(0, orbitLookHeight, 0)
-        cam.CFrame = CFrame.new(orbitPos, lookAtPos)
-        wasOrbitCam = true
-    elseif wasOrbitCam then
-        wasOrbitCam = false
-        resetCameraToNormal()
-    end
-
-    if isWallViewEnabled and cam and hrp then
-        restoreFadedWalls()
-        local okParts, obstructing = pcall(function()
-            return cam:GetPartsObscuringTarget({hrp.Position}, {char})
-        end)
-        if okParts and type(obstructing) == "table" then
-            for _, part in ipairs(obstructing) do
-                if part:IsA("BasePart") then
-                    fadedWallParts[part] = part.LocalTransparencyModifier
-                    part.LocalTransparencyModifier = 0.85
-                end
-            end
-        end
     end
 end)
 
@@ -1386,4 +1007,4 @@ end)
 
 applySubtitleStyle()
 showToast("Koplingtify Lite v2.5 siap digunakan!")
-print("Koplingtify Lite v2.5 Modular (UI + Filter + Sync) loaded.")
+print("Koplingtify Lite v2.5 Modular (UI + Filter + World + Sync) loaded.")
