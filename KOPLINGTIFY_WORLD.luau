@@ -3,6 +3,7 @@
 -- =================================================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local WorldModule = {}
 
@@ -42,7 +43,67 @@ function WorldModule.Init(UI, showToast)
     local orbitSpeed, orbitLookHeight, orbitFOV, orbitDirection = 0.55, 1.0, 70, 1
     local savedDefaultFOV = (workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView) or 70
 
+    -- State Cinematic Black Bars (Letterbox)
+    local isCinematicBars = false
+    local autoBarsOnOrbit = true
+    local barHeightScale = 0.12 -- 12% tinggi layar atas & bawah
+
     local trackedPlayer, trackerHighlight, trackerBillboard, trackerNameLbl, trackerBeam, trackerAtt0, trackerAtt1 = nil, nil, nil, nil, nil, nil, nil
+
+    -- ======================== CINEMATIC LETTERBOX GUI ========================
+    local cinemaGui = Instance.new("ScreenGui")
+    cinemaGui.Name = "KoplingtifyCinemaBars"
+    cinemaGui.IgnoreGuiInset = true
+    cinemaGui.ResetOnSpawn = false
+    cinemaGui.DisplayOrder = 9990
+    cinemaGui.Parent = gui.Parent
+
+    local topCinemaBar = Instance.new("Frame")
+    topCinemaBar.Name = "TopBar"
+    topCinemaBar.Size = UDim2.new(1, 0, barHeightScale, 0)
+    topCinemaBar.Position = UDim2.new(0, 0, -barHeightScale, 0)
+    topCinemaBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    topCinemaBar.BorderSizePixel = 0
+    topCinemaBar.Parent = cinemaGui
+
+    local bottomCinemaBar = Instance.new("Frame")
+    bottomCinemaBar.Name = "BottomBar"
+    bottomCinemaBar.Size = UDim2.new(1, 0, barHeightScale, 0)
+    bottomCinemaBar.Position = UDim2.new(0, 0, 1, 0)
+    bottomCinemaBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    bottomCinemaBar.BorderSizePixel = 0
+    bottomCinemaBar.Parent = cinemaGui
+
+    -- Sesuaikan tombol di dalam Orbit Panel agar muat tombol Cinematic Bar
+    orbitDirBtn.Size = UDim2.new(0, 82, 0, 32)
+    orbitDirBtn.Position = UDim2.new(0, 12, 0, 244)
+    orbitDirBtn.Text = "🔄 Kanan"
+
+    local cinemaBarBtn = makeButton(orbitPanel, "🎬 Bar: OFF", UDim2.new(0, 99, 0, 244), UDim2.new(0, 82, 0, 32), Color3.fromRGB(45, 52, 64))
+
+    orbitResetBtn.Size = UDim2.new(0, 82, 0, 32)
+    orbitResetBtn.Position = UDim2.new(0, 186, 0, 244)
+    orbitResetBtn.Text = "♻ Reset"
+
+    local function setCinematicBars(state)
+        isCinematicBars = state
+        cinemaBarBtn.Text = "🎬 Bar: " .. (isCinematicBars and "ON" or "OFF")
+        cinemaBarBtn.BackgroundColor3 = isCinematicBars and Color3.fromRGB(35, 150, 90) or Color3.fromRGB(45, 52, 64)
+
+        local tweenInfo = TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        if isCinematicBars then
+            TweenService:Create(topCinemaBar, tweenInfo, {Position = UDim2.new(0, 0, 0, 0)}):Play()
+            TweenService:Create(bottomCinemaBar, tweenInfo, {Position = UDim2.new(0, 0, 1 - barHeightScale, 0)}):Play()
+        else
+            TweenService:Create(topCinemaBar, tweenInfo, {Position = UDim2.new(0, 0, -barHeightScale, 0)}):Play()
+            TweenService:Create(bottomCinemaBar, tweenInfo, {Position = UDim2.new(0, 0, 1, 0)}):Play()
+        end
+    end
+
+    cinemaBarBtn.MouseButton1Click:Connect(function()
+        setCinematicBars(not isCinematicBars)
+        showToast("Cinematic Bar " .. (isCinematicBars and "ON" or "OFF"))
+    end)
 
     local orbitUiUpdaters = {}
     local function createOrbitSettingRow(yPos, labelText, formatStr, getVal, setVal, step, minVal, maxVal)
@@ -225,13 +286,13 @@ function WorldModule.Init(UI, showToast)
 
     orbitDirBtn.MouseButton1Click:Connect(function()
         orbitDirection = -orbitDirection
-        orbitDirBtn.Text = orbitDirection == 1 and "🔄 Arah: Kanan" or "🔄 Arah: Kiri"
+        orbitDirBtn.Text = orbitDirection == 1 and "🔄 Kanan" or "🔄 Kiri"
     end)
 
     orbitResetBtn.MouseButton1Click:Connect(function()
         orbitDistance, orbitHeight, orbitSpeed = 10.0, 3.5, 0.55
         orbitLookHeight, orbitFOV, orbitDirection = 1.0, 70, 1
-        orbitDirBtn.Text = "🔄 Arah: Kanan"
+        orbitDirBtn.Text = "🔄 Kanan"
         for _, fn in ipairs(orbitUiUpdaters) do fn() end
     end)
 
@@ -311,8 +372,10 @@ function WorldModule.Init(UI, showToast)
         if isOrbitEnabled then
             local cam = workspace.CurrentCamera
             if cam then savedDefaultFOV = cam.FieldOfView end
+            if autoBarsOnOrbit then setCinematicBars(true) end
         else
             resetCameraToNormal()
+            if autoBarsOnOrbit then setCinematicBars(false) end
         end
         updateOrbitButtonVisuals()
         showToast("Kamera Orbit " .. (isOrbitEnabled and "ON" or "OFF"), Color3.fromRGB(140, 85, 215))
@@ -411,6 +474,7 @@ function WorldModule.Init(UI, showToast)
             if isNoClipEnabled then isNoClipEnabled = false; restoreCharacterCollision() end
             if isWallViewEnabled then isWallViewEnabled = false; applyWallOcclusionMode() end
             clearPlayerLocator()
+            if cinemaGui then pcall(function() cinemaGui:Destroy() end) end
         end
     }
 end
