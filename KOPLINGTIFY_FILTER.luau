@@ -7,7 +7,7 @@ local FilterModule = {}
 -- 1 = Homoglyph (Mengganti huruf vokal dengan karakter Cyrillic identik, terlihat 100% murni)
 -- 2 = Zero-Width / Soft Separator (Menyisipkan karakter tak terlihat di tengah kata)
 -- 3 = Simbol Visual (Menyisipkan karakter titik tengah '·' seperti "je·mbut")
-FilterModule.BypassMode = 1
+FilterModule.BypassMode = 2
 
 local homoglyphMap = {
     ["a"] = "а", -- U+0430
