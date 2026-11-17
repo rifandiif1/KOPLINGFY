@@ -7,9 +7,11 @@ local TweenService = game:GetService("TweenService")
 
 local WorldModule = {}
 
-function WorldModule.Init(UI, showToast)
+function WorldModule.Init(UI, showToast, Config, saveConfig)
     local player = Players.LocalPlayer
     local gui = UI.Gui
+    Config = Config or {}
+    saveConfig = saveConfig or function() end
 
     local orbitBtn = UI.OrbitBtn
     local orbitCfgBtn = UI.OrbitCfgBtn
@@ -34,23 +36,40 @@ function WorldModule.Init(UI, showToast)
     local makeButton = UI.MakeButton
     local makeHoldable = UI.MakeHoldable
 
-    local isNoClipEnabled, isWallViewEnabled = false, false
+    local isNoClipEnabled = Config.isNoClipEnabled == true
+    local isWallViewEnabled = Config.isWallViewEnabled == true
     local savedCanCollide, fadedWallParts = {}, {}
     local origOcclusionMode = player.DevCameraOcclusionMode
 
     local isOrbitEnabled, wasOrbitCam = false, false
-    local orbitAngle, orbitDistance, orbitHeight = 0, 10.0, 3.5
-    local orbitSpeed, orbitLookHeight, orbitFOV, orbitDirection = 0.55, 1.0, 70, 1
+    local orbitAngle = 0
+    local orbitDistance = tonumber(Config.orbitDistance) or 10.0
+    local orbitHeight = tonumber(Config.orbitHeight) or 3.5
+    local orbitSpeed = tonumber(Config.orbitSpeed) or 0.55
+    local orbitLookHeight = tonumber(Config.orbitLookHeight) or 1.0
+    local orbitFOV = tonumber(Config.orbitFOV) or 70
+    local orbitDirection = tonumber(Config.orbitDirection) or 1
     local savedDefaultFOV = (workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView) or 70
 
-    -- State Cinematic Black Bars (Letterbox)
-    local isCinematicBars = false
+    local isCinematicBars = Config.isCinematicBars == true
     local autoBarsOnOrbit = true
-    local barHeightScale = 0.12 -- 12% tinggi layar atas & bawah
+    local barHeightScale = 0.12
 
     local trackedPlayer, trackerHighlight, trackerBillboard, trackerNameLbl, trackerBeam, trackerAtt0, trackerAtt1 = nil, nil, nil, nil, nil, nil, nil
 
-    -- ======================== CINEMATIC LETTERBOX GUI ========================
+    local function syncWorldConfig()
+        Config.isNoClipEnabled = isNoClipEnabled
+        Config.isWallViewEnabled = isWallViewEnabled
+        Config.orbitDistance = orbitDistance
+        Config.orbitHeight = orbitHeight
+        Config.orbitSpeed = orbitSpeed
+        Config.orbitLookHeight = orbitLookHeight
+        Config.orbitFOV = orbitFOV
+        Config.orbitDirection = orbitDirection
+        Config.isCinematicBars = isCinematicBars
+        saveConfig()
+    end
+
     local cinemaGui = Instance.new("ScreenGui")
     cinemaGui.Name = "KoplingtifyCinemaBars"
     cinemaGui.IgnoreGuiInset = true
@@ -74,10 +93,9 @@ function WorldModule.Init(UI, showToast)
     bottomCinemaBar.BorderSizePixel = 0
     bottomCinemaBar.Parent = cinemaGui
 
-    -- Sesuaikan tombol di dalam Orbit Panel agar muat tombol Cinematic Bar
     orbitDirBtn.Size = UDim2.new(0, 82, 0, 32)
     orbitDirBtn.Position = UDim2.new(0, 12, 0, 244)
-    orbitDirBtn.Text = "🔄 Kanan"
+    orbitDirBtn.Text = orbitDirection == 1 and "🔄 Kanan" or "🔄 Kiri"
 
     local cinemaBarBtn = makeButton(orbitPanel, "🎬 Bar: OFF", UDim2.new(0, 99, 0, 244), UDim2.new(0, 82, 0, 32), Color3.fromRGB(45, 52, 64))
 
@@ -85,7 +103,7 @@ function WorldModule.Init(UI, showToast)
     orbitResetBtn.Position = UDim2.new(0, 186, 0, 244)
     orbitResetBtn.Text = "♻ Reset"
 
-    local function setCinematicBars(state)
+    local function setCinematicBars(state, skipSave)
         isCinematicBars = state
         cinemaBarBtn.Text = "🎬 Bar: " .. (isCinematicBars and "ON" or "OFF")
         cinemaBarBtn.BackgroundColor3 = isCinematicBars and Color3.fromRGB(35, 150, 90) or Color3.fromRGB(45, 52, 64)
@@ -98,6 +116,7 @@ function WorldModule.Init(UI, showToast)
             TweenService:Create(topCinemaBar, tweenInfo, {Position = UDim2.new(0, 0, -barHeightScale, 0)}):Play()
             TweenService:Create(bottomCinemaBar, tweenInfo, {Position = UDim2.new(0, 0, 1, 0)}):Play()
         end
+        if not skipSave then syncWorldConfig() end
     end
 
     cinemaBarBtn.MouseButton1Click:Connect(function()
@@ -128,11 +147,13 @@ function WorldModule.Init(UI, showToast)
             local nv = math.clamp(math.floor((getVal() - step) * 100 + 0.5) / 100, minVal, maxVal)
             setVal(nv)
             refresh()
+            syncWorldConfig()
         end)
         makeHoldable(btnPlus, function()
             local nv = math.clamp(math.floor((getVal() + step) * 100 + 0.5) / 100, minVal, maxVal)
             setVal(nv)
             refresh()
+            syncWorldConfig()
         end)
     end
 
@@ -287,6 +308,7 @@ function WorldModule.Init(UI, showToast)
     orbitDirBtn.MouseButton1Click:Connect(function()
         orbitDirection = -orbitDirection
         orbitDirBtn.Text = orbitDirection == 1 and "🔄 Kanan" or "🔄 Kiri"
+        syncWorldConfig()
     end)
 
     orbitResetBtn.MouseButton1Click:Connect(function()
@@ -294,6 +316,7 @@ function WorldModule.Init(UI, showToast)
         orbitLookHeight, orbitFOV, orbitDirection = 1.0, 70, 1
         orbitDirBtn.Text = "🔄 Kanan"
         for _, fn in ipairs(orbitUiUpdaters) do fn() end
+        syncWorldConfig()
     end)
 
     local function restoreCharacterCollision()
@@ -321,11 +344,21 @@ function WorldModule.Init(UI, showToast)
         end)
     end
 
+    -- Terapkan status simpanan awal untuk NoClip, Tembok, dan Cinematic Bar
+    noclipBtn.Text = "👻 NoClip: " .. (isNoClipEnabled and "ON" or "OFF")
+    noclipBtn.BackgroundColor3 = isNoClipEnabled and Color3.fromRGB(205, 115, 45) or Color3.fromRGB(36, 41, 50)
+
+    wallViewBtn.Text = "🧱 Tembok: " .. (isWallViewEnabled and "ON" or "OFF")
+    wallViewBtn.BackgroundColor3 = isWallViewEnabled and Color3.fromRGB(50, 140, 210) or Color3.fromRGB(36, 41, 50)
+    if isWallViewEnabled then applyWallOcclusionMode() end
+    if isCinematicBars then setCinematicBars(true, true) end
+
     noclipBtn.MouseButton1Click:Connect(function()
         isNoClipEnabled = not isNoClipEnabled
         noclipBtn.Text = "👻 NoClip: " .. (isNoClipEnabled and "ON" or "OFF")
         noclipBtn.BackgroundColor3 = isNoClipEnabled and Color3.fromRGB(205, 115, 45) or Color3.fromRGB(36, 41, 50)
         if not isNoClipEnabled then restoreCharacterCollision() end
+        syncWorldConfig()
         showToast("NoClip " .. (isNoClipEnabled and "Diaktifkan" or "Dimatikan"))
     end)
 
@@ -334,6 +367,7 @@ function WorldModule.Init(UI, showToast)
         wallViewBtn.Text = "🧱 Tembok: " .. (isWallViewEnabled and "ON" or "OFF")
         wallViewBtn.BackgroundColor3 = isWallViewEnabled and Color3.fromRGB(50, 140, 210) or Color3.fromRGB(36, 41, 50)
         applyWallOcclusionMode()
+        syncWorldConfig()
         showToast("View Tembok Transparan " .. (isWallViewEnabled and "ON" or "OFF"))
     end)
 
