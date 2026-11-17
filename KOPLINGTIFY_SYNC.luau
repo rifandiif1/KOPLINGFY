@@ -1,8 +1,4 @@
--- KOPLINGTIFY LITE (NOCLIP + INVISICAM WALL VIEW + CUSTOM ORBIT + SAFE FILTER)
--- Fitur: Auto-Sync durasi lagu, tanpa batas max speed 2x, Auto-Search pergantian lagu,
--- UI Android ramah sentuh, Minimize, Floating Icon, Subtitle Transparan (HUD), Progress Bar,
--- Filter Kata Kasar & Rawan Sensor, Kamera Orbit Full Setting, NoClip, & View Tembok Transparan.
-
+-- KOPLINGTIFY LITE v2.0 (MODERN TAB UI + AUTO TRANSLATE + FULL SUBTITLE & ORBIT)
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -11,7 +7,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 if not player then
@@ -19,60 +14,54 @@ if not player then
     player = Players.LocalPlayer
 end
 
--- State & Variabel Utama
-local cache = {}
-local activeSound, activeSoundId = nil, nil
-local activeItem = nil
+local cache, transCache = {}, {}
+local activeSound, activeSoundId, activeItem = nil, nil, nil
 local lyrics = {}
 local currentIndex = 0
-local lyricSpeed = 1.0
-local syncOffset = 0.0
-local manualSpeedOverride = false
-local autoSpeedSynced = false
-local isAutoRatioActive = false
-local autoChat = false
-local safeFilterEnabled = true
-local isMutedLocally = false
-local isSubtitleEnabled = false
-local originalVolume = 0.5
+local lyricSpeed, syncOffset = 1.0, 0.0
+local manualSpeedOverride, autoSpeedSynced, isAutoRatioActive = false, false, false
+local autoChat, safeFilterEnabled, translateEnabled = false, true, true
+local chatLangMode = 1
+local chatLangNames = {"Asli", "Indo", "Dual"}
+
+local isMutedLocally, originalVolume = false, 0.5
 local lastSentLine = ""
-local scanToken = 0
+local scanToken, transToken = 0, 0
 local isMinimized = false
 
--- State NoClip & View Tembok (Invisicam / Wall Transparency)
-local isNoClipEnabled = false
-local isWallViewEnabled = false
-local savedCanCollide = {}
-local fadedWallParts = {}
+local isSubtitleEnabled = false
+local subOffsetX, subOffsetY, subTextSize = 0, 0, 20
+local subCinemaBg, subLocked = false, false
+local subColorIndex = 1
+local subPalette = {
+    {Name = "Putih",  Color = Color3.fromRGB(255, 255, 255)},
+    {Name = "Hijau",  Color = Color3.fromRGB(45, 235, 135)},
+    {Name = "Kuning", Color = Color3.fromRGB(255, 220, 65)},
+    {Name = "Cyan",   Color = Color3.fromRGB(80, 225, 255)},
+    {Name = "Pink",   Color = Color3.fromRGB(255, 135, 195)},
+    {Name = "Ungu",   Color = Color3.fromRGB(195, 145, 255)}
+}
+
+local isNoClipEnabled, isWallViewEnabled = false, false
+local savedCanCollide, fadedWallParts = {}, {}
 local origOcclusionMode = player.DevCameraOcclusionMode
 
--- State & Konfigurasi Kamera Orbit
-local isOrbitEnabled = false
-local wasOrbitCam = false
-local orbitAngle = 0
-local orbitDistance = 10.0
-local orbitHeight = 3.5
-local orbitSpeed = 0.55
-local orbitLookHeight = 1.0
-local orbitFOV = 70
-local orbitDirection = 1
+local isOrbitEnabled, wasOrbitCam = false, false
+local orbitAngle, orbitDistance, orbitHeight = 0, 10.0, 3.5
+local orbitSpeed, orbitLookHeight, orbitFOV, orbitDirection = 0.55, 1.0, 70, 1
 local savedDefaultFOV = (workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView) or 70
 
-local FULL_SIZE = UDim2.new(0, 340, 0, 456)
-local MINI_SIZE = UDim2.new(0, 340, 0, 94)
+local FULL_SIZE = UDim2.new(0, 350, 0, 340)
+local ISLAND_SIZE = UDim2.new(0, 290, 0, 48)
 
 local function safeCall(fn, ...)
-    local ok, result = pcall(fn, ...)
-    if ok then return result end
-    return nil
+    local ok, res = pcall(fn, ...)
+    return ok and res or nil
 end
 
 local function httpGet(url)
-    local ok, result = pcall(function()
-        return game:HttpGet(url)
-    end)
-    if ok and type(result) == "string" then return result end
-    return nil
+    local ok, res = pcall(function() return game:HttpGet(url) end)
+    return (ok and type(res) == "string") and res or nil
 end
 
 local function formatTime(seconds)
@@ -80,7 +69,6 @@ local function formatTime(seconds)
     return string.format("%02d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
--- ======================== KAMUS FILTER KATA AMAN ROBLOX (LENGKAP) ========================
 local phraseReplacements = {
     {"memudar dalam remang sunyi", "meredup dalam teduh hening"},
     {"dalam remang sunyi", "dalam teduh hening"},
@@ -145,16 +133,12 @@ local phraseReplacements = {
 }
 
 local wordReplacements = {
-    -- Kata Puitis & Kepemilikan Rawan Sensor
     ["memnudar"] = "meredup", ["memudar"] = "meredup", ["pudar"] = "redup",
     ["remang"] = "teduh", ["sunyi"] = "hening", ["sepi"] = "tenang",
     ["kesepian"] = "sendirian", ["gelap"] = "malam", ["kegelapan"] = "malam",
     ["hampa"] = "kosong", ["kelam"] = "sendu", ["lara"] = "duka", ["pilu"] = "sendu",
     ["memiliki"] = "mendapati", ["memilikimu"] = "menemanimu", ["miliki"] = "dapati",
-    ["milikku"] = "bagianku", ["milikmu"] = "bagianmu",
-    ["dirimu"] = "sosokmu", ["diriku"] = "sosokku",
-
-    -- Umpatan & Kasar Inggris
+    ["milikku"] = "bagianku", ["milikmu"] = "bagianmu", ["dirimu"] = "sosokmu", ["diriku"] = "sosokku",
     ["motherfucker"] = "troublemaker", ["motherfuckers"] = "troublemakers",
     ["motherfuckin"] = "freakin", ["motherfucking"] = "freaking",
     ["muthafucka"] = "troublemaker", ["muthafuckin"] = "freakin",
@@ -183,16 +167,12 @@ local wordReplacements = {
     ["whores"] = "players", ["whore"] = "player", ["hoe"] = "player",
     ["hoes"] = "players", ["skank"] = "meanie", ["prostitute"] = "dancer",
     ["stripper"] = "dancer", ["hooker"] = "dancer", ["pimp"] = "boss",
-
-    -- Rasial & Diskriminasi
     ["nigga"] = "homie", ["niggas"] = "homies", ["niggaz"] = "homies",
     ["nigger"] = "brother", ["niggers"] = "brothers", ["nibba"] = "homie",
     ["negro"] = "fellow", ["faggot"] = "fool", ["faggots"] = "fools",
     ["fag"] = "fool", ["fags"] = "fools", ["dyke"] = "rebel",
     ["tranny"] = "person", ["retard"] = "silly", ["retards"] = "goofballs",
     ["retarded"] = "foolish", ["cripple"] = "broken", ["spastic"] = "frantic",
-
-    -- Kekerasan & Senjata Inggris
     ["suicidal"] = "hopeless", ["suicide"] = "give up", ["kms"] = "sigh", ["kys"] = "bye",
     ["killing"] = "chilling", ["killed"] = "chilled", ["killer"] = "hunter",
     ["kills"] = "chills", ["kill"] = "chill", ["murderer"] = "stranger",
@@ -210,8 +190,6 @@ local wordReplacements = {
     ["bullets"] = "sparks", ["bullet"] = "spark", ["trigger"] = "switch", ["bomb"] = "boom",
     ["terrorist"] = "villain", ["terrorism"] = "chaos", ["hostage"] = "captive",
     ["torture"] = "trouble", ["abuse"] = "mistreat", ["violent"] = "wild", ["violence"] = "chaos",
-
-    -- Dewasa, Romansa & Obat Inggris
     ["sexual"] = "romantic", ["sexually"] = "deeply", ["sex"] = "love",
     ["sexy"] = "lovely", ["sexiest"] = "loveliest", ["porn"] = "movie",
     ["porno"] = "movie", ["hentai"] = "anime", ["nsfw"] = "secret",
@@ -236,8 +214,6 @@ local wordReplacements = {
     ["alcohol"] = "soda", ["liquor"] = "juice", ["whiskey"] = "tea", ["vodka"] = "water",
     ["tequila"] = "lemonade", ["beer"] = "rootbeer", ["wine"] = "grape",
     ["champagne"] = "sparkling", ["bartender"] = "barista",
-
-    -- Kata Sopan Rawan Sensor Inggris
     ["kiss"] = "greet", ["kisses"] = "smiles", ["kissing"] = "smiling", ["kissed"] = "smiled",
     ["hug"] = "hold", ["hugs"] = "holds", ["hugging"] = "holding", ["hugged"] = "held",
     ["cuddle"] = "huddle", ["cuddling"] = "huddling", ["caress"] = "breeze",
@@ -259,8 +235,6 @@ local wordReplacements = {
     ["shawty"] = "shorty", ["shorty"] = "friend", ["daddy"] = "boss", ["mommy"] = "queen",
     ["crush"] = "spark", ["flirt"] = "tease", ["flirting"] = "joking", ["seduce"] = "charm",
     ["jealous"] = "envious", ["cheating"] = "lying", ["cheat"] = "trick", ["ex"] = "past",
-
-    -- Umpatan, Kasar & Slang Indonesia
     ["anjing"] = "kucing", ["anjir"] = "astaga", ["anjay"] = "keren", ["anjrit"] = "waduh",
     ["anjrot"] = "waduh", ["anying"] = "kucing", ["njir"] = "wah", ["njay"] = "keren",
     ["asu"] = "kucing", ["babi"] = "kelinci", ["celeng"] = "kelinci", ["monyet"] = "kera",
@@ -288,8 +262,6 @@ local wordReplacements = {
     ["cok"] = "kawan", ["jangkrik"] = "belalang", ["matamu"] = "matanya", ["ndasmu"] = "kepalamu",
     ["lambemu"] = "ucapanmu", ["raimu"] = "wajahmu", ["pantek"] = "waduh", ["kimak"] = "astaga",
     ["pukimak"] = "astaga", ["puki"] = "kucing", ["sundal"] = "nakal",
-
-    -- Dewasa, Vulgar & Kekerasan Indonesia
     ["kontol"] = "konyol", ["kntl"] = "konyol", ["memek"] = "bebek", ["mmk"] = "bebek",
     ["pepek"] = "bebek", ["jembut"] = "rambut", ["jmbt"] = "rambut", ["itil"] = "kecil",
     ["pentil"] = "ujung", ["tetek"] = "dada", ["tete"] = "dada", ["toket"] = "dada",
@@ -329,8 +301,6 @@ local wordReplacements = {
     ["rokok"] = "asap", ["merokok"] = "berasap", ["judi"] = "main", ["berjudi"] = "bermain",
     ["bandar"] = "penjaga", ["slot"] = "mesin", ["maling"] = "pencari", ["pencuri"] = "pengambil",
     ["merampok"] = "mengambil", ["korupsi"] = "curang", ["penjara"] = "istana",
-
-    -- Kata Sopan Tapi Rawan Sensor di Roblox
     ["peluk"] = "rengkuh", ["memeluk"] = "merengkuh", ["memelukmu"] = "merengkuhmu",
     ["pelukan"] = "rengkuhan", ["pelukanmu"] = "rengkuhanmu", ["dipeluk"] = "direngkuh",
     ["dekap"] = "jaga", ["mendekap"] = "menjaga", ["dekapan"] = "naungan",
@@ -378,8 +348,6 @@ local wordReplacements = {
     ["tt"] = "video", ["uang"] = "koin", ["duit"] = "koin", ["bayar"] = "tukar",
     ["membayar"] = "menukar", ["jual"] = "beri", ["beli"] = "ambil", ["harga"] = "nilai",
     ["murahan"] = "sederhana",
-
-    -- Platform Sosmed
     ["discord"] = "radio", ["tiktok"] = "clock", ["instagram"] = "camera",
     ["whatsapp"] = "phone", ["telegram"] = "letter", ["youtube"] = "video",
     ["twitter"] = "bird", ["facebook"] = "book", ["snapchat"] = "ghost",
@@ -397,10 +365,7 @@ local function matchCase(original, replacement)
 end
 
 local function sanitizeLyricText(text)
-    if not text or text == "" or not safeFilterEnabled then
-        return text
-    end
-
+    if not text or text == "" or not safeFilterEnabled then return text end
     local cleaned = text
 
     for _, pair in ipairs(phraseReplacements) do
@@ -413,7 +378,6 @@ local function sanitizeLyricText(text)
 
     cleaned = cleaned:gsub("([%a'*%-]+)", function(word)
         local lowerWord = word:lower()
-
         if lowerWord:find("%*") then
             if lowerWord:match("^f.*k$") then return matchCase(word, "freak") end
             if lowerWord:match("^s.*t$") then return matchCase(word, "shoot") end
@@ -459,6 +423,96 @@ local function sanitizeLyricText(text)
     return cleaned
 end
 
+local function translateLineToIndo(text)
+    if not text or text == "" or text == "♪" then return "" end
+    local key = string.lower(text)
+    if transCache[key] then return transCache[key] end
+
+    local url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=id&dt=t&q=" .. HttpService:UrlEncode(text)
+    local body = httpGet(url)
+    if not body then return "" end
+
+    local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+    if ok and type(data) == "table" and type(data[1]) == "table" then
+        local resultParts = {}
+        for _, seg in ipairs(data[1]) do
+            if type(seg) == "table" and type(seg[1]) == "string" then
+                table.insert(resultParts, seg[1])
+            end
+        end
+        local translated = table.concat(resultParts, ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if translated ~= "" and string.lower(translated) ~= key then
+            transCache[key] = translated
+            return translated
+        else
+            transCache[key] = ""
+            return ""
+        end
+    end
+    return ""
+end
+
+local function prefetchTranslations(lyricList, myToken)
+    task.spawn(function()
+        local i = 1
+        while i <= #lyricList and transToken == myToken do
+            if not translateEnabled then
+                task.wait(0.5)
+            else
+                local batchTexts, batchIndices = {}, {}
+                while #batchTexts < 6 and i <= #lyricList do
+                    local lineObj = lyricList[i]
+                    local rawTxt = lineObj and lineObj.Text or ""
+                    if rawTxt ~= "" and rawTxt ~= "♪" and lineObj.Trans == nil then
+                        local cached = transCache[string.lower(rawTxt)]
+                        if cached ~= nil then
+                            lineObj.Trans = cached
+                        else
+                            table.insert(batchTexts, rawTxt)
+                            table.insert(batchIndices, i)
+                        end
+                    end
+                    i += 1
+                end
+
+                if #batchTexts > 0 and transToken == myToken then
+                    local combined = table.concat(batchTexts, "\n")
+                    local url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=id&dt=t&q=" .. HttpService:UrlEncode(combined)
+                    local body = httpGet(url)
+                    if body and transToken == myToken then
+                        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+                        if ok and type(data) == "table" and type(data[1]) == "table" then
+                            local fullTrans = ""
+                            for _, seg in ipairs(data[1]) do
+                                if type(seg) == "table" and type(seg[1]) == "string" then
+                                    fullTrans = fullTrans .. seg[1]
+                                end
+                            end
+                            local splitLines = string.split(fullTrans, "\n")
+                            for idx, lyricIdx in ipairs(batchIndices) do
+                                local targetLine = lyricList[lyricIdx]
+                                local tr = (splitLines[idx] or ""):gsub("^%s+", ""):gsub("%s+$", "")
+                                if targetLine then
+                                    if tr ~= "" and string.lower(tr) ~= string.lower(targetLine.Text) then
+                                        targetLine.Trans = tr
+                                        transCache[string.lower(targetLine.Text)] = tr
+                                    else
+                                        targetLine.Trans = ""
+                                        transCache[string.lower(targetLine.Text)] = ""
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.25)
+                else
+                    task.wait(0.05)
+                end
+            end
+        end
+    end)
+end
+
 local function cleanSongName(name)
     if not name then return "" end
     local clean = name:gsub("%[.-%]", ""):gsub("%(.-%)", ""):gsub("%{.-%}", "")
@@ -497,7 +551,7 @@ local function parseLRC(raw)
         end
         local text = line:gsub("%[%d+:%d+%.?%d*%]", ""):gsub("^%s+", ""):gsub("%s+$", "")
         for _, t in ipairs(stamps) do
-            table.insert(parsed, {Time = t, Text = text})
+            table.insert(parsed, {Time = t, Text = text, Trans = nil})
         end
     end
     table.sort(parsed, function(a, b) return a.Time < b.Time end)
@@ -538,9 +592,7 @@ local function searchLyrics(query)
         end
         if #results >= 8 then break end
     end
-    if #results > 0 then
-        cache[key] = results
-    end
+    if #results > 0 then cache[key] = results end
     return results
 end
 
@@ -585,27 +637,16 @@ local function findSound()
     return best
 end
 
--- ======================== SAFE GUI PARENT ========================
 local function getSafeParent()
-    local okGethui, hui = pcall(function()
-        return gethui and gethui()
-    end)
+    local okGethui, hui = pcall(function() return gethui and gethui() end)
     if okGethui and hui then return hui end
-
-    local okCore, core = pcall(function()
-        return game:GetService("CoreGui")
-    end)
+    local okCore, core = pcall(function() return game:GetService("CoreGui") end)
     if okCore and core then return core end
-
     return player:WaitForChild("PlayerGui")
 end
 
-pcall(function()
-    if gethui and gethui():FindFirstChild("KoplingtifyLite") then gethui().KoplingtifyLite:Destroy() end
-end)
-pcall(function()
-    if game:GetService("CoreGui"):FindFirstChild("KoplingtifyLite") then game:GetService("CoreGui").KoplingtifyLite:Destroy() end
-end)
+pcall(function() if gethui and gethui():FindFirstChild("KoplingtifyLite") then gethui().KoplingtifyLite:Destroy() end end)
+pcall(function() if game:GetService("CoreGui"):FindFirstChild("KoplingtifyLite") then game:GetService("CoreGui").KoplingtifyLite:Destroy() end end)
 pcall(function()
     local pg = player:FindFirstChild("PlayerGui")
     if pg and pg:FindFirstChild("KoplingtifyLite") then pg.KoplingtifyLite:Destroy() end
@@ -616,78 +657,6 @@ gui.Name = "KoplingtifyLite"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 9999
 gui.Parent = getSafeParent()
-
--- Frame Utama
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = FULL_SIZE
-main.Position = UDim2.new(0.5, -170, 0.08, 0)
-main.BackgroundColor3 = Color3.fromRGB(20, 22, 27)
-main.BorderSizePixel = 0
-main.Active = true
-main.Parent = gui
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
-
-local mainStroke = Instance.new("UIStroke", main)
-mainStroke.Color = Color3.fromRGB(30, 215, 125)
-mainStroke.Thickness = 1.5
-mainStroke.Transparency = 0.25
-
--- Tombol Mengambang (Floating Pill)
-local floatBtn = Instance.new("TextButton")
-floatBtn.Name = "FloatingToggle"
-floatBtn.Size = UDim2.new(0, 50, 0, 50)
-floatBtn.Position = UDim2.new(0, 20, 0.45, 0)
-floatBtn.BackgroundColor3 = Color3.fromRGB(22, 26, 32)
-floatBtn.TextColor3 = Color3.fromRGB(30, 230, 135)
-floatBtn.Font = Enum.Font.GothamBold
-floatBtn.TextSize = 22
-floatBtn.Text = "🎵"
-floatBtn.Visible = false
-floatBtn.Active = true
-floatBtn.Parent = gui
-Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(1, 0)
-local floatStroke = Instance.new("UIStroke", floatBtn)
-floatStroke.Color = Color3.fromRGB(30, 215, 125)
-floatStroke.Thickness = 2
-
--- ======================== SUBTITLE HUD OVERLAY (TRANSPARAN) ========================
-local subtitleFrame = Instance.new("Frame")
-subtitleFrame.Name = "SubtitleOverlay"
-subtitleFrame.Size = UDim2.new(0, 500, 0, 68)
-subtitleFrame.Position = UDim2.new(0.5, -250, 0.82, 0)
-subtitleFrame.BackgroundTransparency = 1
-subtitleFrame.Visible = false
-subtitleFrame.Active = true
-subtitleFrame.Parent = gui
-
-local subMainText = Instance.new("TextLabel")
-subMainText.Name = "SubCurrent"
-subMainText.Size = UDim2.new(1, 0, 0, 38)
-subMainText.Position = UDim2.new(0, 0, 0, 0)
-subMainText.BackgroundTransparency = 1
-subMainText.Font = Enum.Font.GothamBold
-subMainText.TextSize = 20
-subMainText.TextColor3 = Color3.fromRGB(255, 255, 255)
-subMainText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-subMainText.TextStrokeTransparency = 0.1
-subMainText.TextWrapped = true
-subMainText.Text = "Menunggu lagu..."
-subMainText.Parent = subtitleFrame
-
-local subNextText = Instance.new("TextLabel")
-subNextText.Name = "SubNext"
-subNextText.Size = UDim2.new(1, 0, 0, 24)
-subNextText.Position = UDim2.new(0, 0, 0, 40)
-subNextText.BackgroundTransparency = 1
-subNextText.Font = Enum.Font.GothamSemibold
-subNextText.TextSize = 14
-subNextText.TextColor3 = Color3.fromRGB(185, 195, 205)
-subNextText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-subNextText.TextStrokeTransparency = 0.25
-subNextText.TextWrapped = true
-subNextText.Text = ""
-subNextText.Parent = subtitleFrame
 
 local function makeLabel(parent, name, pos, size, text, fontSize, color)
     local obj = Instance.new("TextLabel")
@@ -708,14 +677,14 @@ local function makeButton(parent, text, pos, size, bgColor)
     local b = Instance.new("TextButton")
     b.Position = pos
     b.Size = size
-    b.BackgroundColor3 = bgColor or Color3.fromRGB(39, 45, 51)
+    b.BackgroundColor3 = bgColor or Color3.fromRGB(36, 41, 50)
     b.TextColor3 = Color3.fromRGB(245, 245, 245)
     b.Font = Enum.Font.GothamSemibold
     b.TextSize = 11
     b.Text = text
     b.AutoButtonColor = true
     b.Parent = parent
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 7)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
     return b
 end
 
@@ -737,22 +706,19 @@ local function makeHoldable(btn, callback)
             holding = false
         end
     end)
-    btn.MouseLeave:Connect(function()
-        holding = false
-    end)
+    btn.MouseLeave:Connect(function() holding = false end)
 end
 
-local function enableDrag(dragHandle, targetFrame)
+local function enableDrag(dragHandle, targetFrame, checkLockFn)
     local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
     dragHandle.InputBegan:Connect(function(input)
+        if checkLockFn and checkLockFn() then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = targetFrame.Position
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
@@ -763,6 +729,10 @@ local function enableDrag(dragHandle, targetFrame)
     end)
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
+            if checkLockFn and checkLockFn() then
+                dragging = false
+                return
+            end
             local delta = input.Position - dragStart
             targetFrame.Position = UDim2.new(
                 startPos.X.Scale, startPos.X.Offset + delta.X,
@@ -772,43 +742,472 @@ local function enableDrag(dragHandle, targetFrame)
     end)
 end
 
--- ======================== HEADER BAR ========================
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = FULL_SIZE
+main.Position = UDim2.new(0.5, -175, 0.08, 0)
+main.BackgroundColor3 = Color3.fromRGB(16, 18, 24)
+main.BackgroundTransparency = 0.04
+main.BorderSizePixel = 0
+main.ClipsDescendants = true
+main.Active = true
+main.Parent = gui
+local mainCorner = Instance.new("UICorner", main)
+mainCorner.CornerRadius = UDim.new(0, 16)
+
+local mainStroke = Instance.new("UIStroke", main)
+mainStroke.Color = Color3.fromRGB(255, 255, 255)
+mainStroke.Thickness = 1.6
+mainStroke.Transparency = 0.15
+
+local strokeGrad = Instance.new("UIGradient", mainStroke)
+strokeGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 230, 135)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(60, 160, 250)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(175, 110, 255))
+})
+strokeGrad.Rotation = 35
+
+local toastBanner = Instance.new("Frame")
+toastBanner.Name = "ToastBanner"
+toastBanner.Size = UDim2.new(1, -24, 0, 26)
+toastBanner.Position = UDim2.new(0, 12, 0, -32)
+toastBanner.BackgroundColor3 = Color3.fromRGB(28, 165, 95)
+toastBanner.BorderSizePixel = 0
+toastBanner.ZIndex = 30
+toastBanner.Parent = main
+Instance.new("UICorner", toastBanner).CornerRadius = UDim.new(0, 8)
+
+local toastText = makeLabel(toastBanner, "ToastText", UDim2.new(0, 8, 0, 0), UDim2.new(1, -16, 1, 0), "", 11, Color3.fromRGB(255, 255, 255))
+toastText.Font = Enum.Font.GothamBold
+toastText.ZIndex = 31
+
+local toastId = 0
+local function showToast(msg, bgColor)
+    if isMinimized then return end
+    toastId += 1
+    local myToast = toastId
+    toastText.Text = "✨ " .. tostring(msg)
+    toastBanner.BackgroundColor3 = bgColor or Color3.fromRGB(28, 155, 90)
+    TweenService:Create(toastBanner, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0, 12, 0, 6)
+    }):Play()
+    task.delay(2.2, function()
+        if toastId == myToast and toastBanner and toastBanner.Parent then
+            TweenService:Create(toastBanner, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Position = UDim2.new(0, 12, 0, -32)
+            }):Play()
+        end
+    end)
+end
+
+local floatBtn = Instance.new("TextButton")
+floatBtn.Name = "FloatingToggle"
+floatBtn.Size = UDim2.new(0, 50, 0, 50)
+floatBtn.Position = UDim2.new(0, 20, 0.45, 0)
+floatBtn.BackgroundColor3 = Color3.fromRGB(20, 24, 30)
+floatBtn.TextColor3 = Color3.fromRGB(35, 230, 135)
+floatBtn.Font = Enum.Font.GothamBold
+floatBtn.TextSize = 22
+floatBtn.Text = "🎵"
+floatBtn.Visible = false
+floatBtn.Active = true
+floatBtn.Parent = gui
+Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(1, 0)
+local floatStroke = Instance.new("UIStroke", floatBtn)
+floatStroke.Color = Color3.fromRGB(35, 230, 135)
+floatStroke.Thickness = 2
+
+local subtitleFrame = Instance.new("Frame")
+subtitleFrame.Name = "SubtitleOverlay"
+subtitleFrame.Size = UDim2.new(0, 520, 0, 86)
+subtitleFrame.Position = UDim2.new(0.5, -260, 0.80, 0)
+subtitleFrame.BackgroundColor3 = Color3.fromRGB(10, 12, 16)
+subtitleFrame.BackgroundTransparency = 1
+subtitleFrame.BorderSizePixel = 0
+subtitleFrame.Visible = false
+subtitleFrame.Active = true
+subtitleFrame.Parent = gui
+Instance.new("UICorner", subtitleFrame).CornerRadius = UDim.new(0, 12)
+
+local subBoxStroke = Instance.new("UIStroke", subtitleFrame)
+subBoxStroke.Color = Color3.fromRGB(45, 235, 135)
+subBoxStroke.Thickness = 1.2
+subBoxStroke.Transparency = 1
+
+local subMainText = Instance.new("TextLabel")
+subMainText.Name = "SubCurrent"
+subMainText.Size = UDim2.new(1, -16, 0, 34)
+subMainText.Position = UDim2.new(0, 8, 0, 4)
+subMainText.BackgroundTransparency = 1
+subMainText.Font = Enum.Font.GothamBold
+subMainText.TextSize = subTextSize
+subMainText.TextColor3 = subPalette[subColorIndex].Color
+subMainText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+subMainText.TextStrokeTransparency = 0.08
+subMainText.TextWrapped = true
+subMainText.Text = "Menunggu lagu..."
+subMainText.Parent = subtitleFrame
+
+local subTransText = Instance.new("TextLabel")
+subTransText.Name = "SubTrans"
+subTransText.Size = UDim2.new(1, -16, 0, 22)
+subTransText.Position = UDim2.new(0, 8, 0, 38)
+subTransText.BackgroundTransparency = 1
+subTransText.Font = Enum.Font.GothamSemibold
+subTransText.TextSize = math.max(11, subTextSize - 4)
+subTransText.TextColor3 = Color3.fromRGB(115, 245, 175)
+subTransText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+subTransText.TextStrokeTransparency = 0.12
+subTransText.TextWrapped = true
+subTransText.Text = ""
+subTransText.Parent = subtitleFrame
+
+local subNextText = Instance.new("TextLabel")
+subNextText.Name = "SubNext"
+subNextText.Size = UDim2.new(1, -16, 0, 20)
+subNextText.Position = UDim2.new(0, 8, 0, 62)
+subNextText.BackgroundTransparency = 1
+subNextText.Font = Enum.Font.Gotham
+subNextText.TextSize = math.max(10, subTextSize - 6)
+subNextText.TextColor3 = Color3.fromRGB(175, 185, 195)
+subNextText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+subNextText.TextStrokeTransparency = 0.25
+subNextText.TextWrapped = true
+subNextText.Text = ""
+subNextText.Parent = subtitleFrame
+
+local function applySubtitleStyle()
+    subtitleFrame.Position = UDim2.new(0.5, -260 + subOffsetX, 0.80, subOffsetY)
+    subtitleFrame.BackgroundTransparency = subCinemaBg and 0.35 or 1
+    subBoxStroke.Transparency = subCinemaBg and 0.45 or 1
+    subMainText.TextSize = subTextSize
+    subMainText.TextColor3 = subPalette[subColorIndex].Color
+    subTransText.TextSize = math.max(11, subTextSize - 4)
+    subNextText.TextSize = math.max(10, subTextSize - 6)
+    subTransText.Visible = translateEnabled
+end
+
+enableDrag(subtitleFrame, subtitleFrame, function() return subLocked end)
+enableDrag(floatBtn, floatBtn)
+
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
 topBar.Size = UDim2.new(1, 0, 0, 40)
-topBar.BackgroundColor3 = Color3.fromRGB(26, 30, 37)
+topBar.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
 topBar.BorderSizePixel = 0
 topBar.Active = true
 topBar.Parent = main
-Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 12)
+Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 16)
 
-local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 10, 0, 3), UDim2.new(1, -230, 0, 18), "KOPLINGTIFY LITE", 12, Color3.fromRGB(30, 230, 135))
+local titleHeader = makeLabel(topBar, "Header", UDim2.new(0, 12, 0, 3), UDim2.new(1, -205, 0, 18), "KOPLINGTIFY  •  PRO", 12, Color3.fromRGB(40, 235, 140))
 titleHeader.Font = Enum.Font.GothamBold
 titleHeader.TextXAlignment = Enum.TextXAlignment.Left
 
-local status = makeLabel(topBar, "Status", UDim2.new(0, 10, 0, 20), UDim2.new(1, -230, 0, 16), "Putar musik atau cari lirik...", 9, Color3.fromRGB(160, 168, 178))
+local status = makeLabel(topBar, "Status", UDim2.new(0, 12, 0, 20), UDim2.new(1, -205, 0, 16), "Putar musik atau cari lirik...", 9, Color3.fromRGB(155, 165, 178))
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextTruncate = Enum.TextTruncate.AtEnd
 
-local orbitBtn = makeButton(topBar, "🎥", UDim2.new(1, -218, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
-local orbitCfgBtn = makeButton(topBar, "⚙", UDim2.new(1, -188, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
-local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -158, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
-local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -128, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
-local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -98, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
-local minBtn = makeButton(topBar, "—", UDim2.new(1, -68, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(39, 45, 55))
-local closeBtn = makeButton(topBar, "×", UDim2.new(1, -38, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(130, 42, 48))
+local orbitBtn = makeButton(topBar, "🎥", UDim2.new(1, -192, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(36, 42, 52))
+local subToggleBtn = makeButton(topBar, "📺", UDim2.new(1, -160, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(36, 42, 52))
+local muteBtn = makeButton(topBar, "🔊", UDim2.new(1, -128, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(36, 42, 52))
+local pillModeBtn = makeButton(topBar, "🎵", UDim2.new(1, -96, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(36, 42, 52))
+local minBtn = makeButton(topBar, "—", UDim2.new(1, -64, 0, 6), UDim2.new(0, 28, 0, 28), Color3.fromRGB(36, 42, 52))
+local closeBtn = makeButton(topBar, "×", UDim2.new(1, -32, 0, 6), UDim2.new(0, 26, 0, 28), Color3.fromRGB(135, 42, 48))
 closeBtn.TextSize = 15
 
 enableDrag(topBar, main)
-enableDrag(floatBtn, floatBtn)
-enableDrag(subtitleFrame, subtitleFrame)
 
--- ======================== PANEL KUSTOMISASI ORBIT KAMERA (⚙) ========================
+local islandBar = Instance.new("Frame")
+islandBar.Name = "DynamicIsland"
+islandBar.Size = UDim2.new(1, 0, 1, 0)
+islandBar.BackgroundColor3 = Color3.fromRGB(14, 16, 22)
+islandBar.BorderSizePixel = 0
+islandBar.Visible = false
+islandBar.Active = true
+islandBar.Parent = main
+Instance.new("UICorner", islandBar).CornerRadius = UDim.new(1, 0)
+
+local islandDisc = makeLabel(islandBar, "Disc", UDim2.new(0, 10, 0.5, -14), UDim2.new(0, 28, 0, 28), "💿", 18, Color3.fromRGB(45, 235, 135))
+local islandLyric = makeLabel(islandBar, "IslandLyric", UDim2.new(0, 42, 0, 4), UDim2.new(1, -110, 0, 22), "Menunggu lagu...", 12, Color3.fromRGB(255, 255, 255))
+islandLyric.Font = Enum.Font.GothamBold
+islandLyric.TextXAlignment = Enum.TextXAlignment.Left
+islandLyric.TextTruncate = Enum.TextTruncate.AtEnd
+
+local islandTrans = makeLabel(islandBar, "IslandTrans", UDim2.new(0, 42, 0, 23), UDim2.new(1, -110, 0, 16), "", 10, Color3.fromRGB(105, 235, 165))
+islandTrans.TextXAlignment = Enum.TextXAlignment.Left
+islandTrans.TextTruncate = Enum.TextTruncate.AtEnd
+
+local islandExpandBtn = makeButton(islandBar, "＋", UDim2.new(1, -62, 0.5, -13), UDim2.new(0, 26, 0, 26), Color3.fromRGB(35, 150, 90))
+local islandPillBtn = makeButton(islandBar, "🎵", UDim2.new(1, -32, 0.5, -13), UDim2.new(0, 26, 0, 26), Color3.fromRGB(36, 42, 52))
+
+local islandProgBg = Instance.new("Frame")
+islandProgBg.Position = UDim2.new(0, 24, 1, -4)
+islandProgBg.Size = UDim2.new(1, -48, 0, 2)
+islandProgBg.BackgroundColor3 = Color3.fromRGB(40, 46, 58)
+islandProgBg.BorderSizePixel = 0
+islandProgBg.Parent = islandBar
+Instance.new("UICorner", islandProgBg).CornerRadius = UDim.new(1, 0)
+
+local islandProgFill = Instance.new("Frame")
+islandProgFill.Size = UDim2.new(0, 0, 1, 0)
+islandProgFill.BackgroundColor3 = Color3.fromRGB(40, 235, 140)
+islandProgFill.BorderSizePixel = 0
+islandProgFill.Parent = islandProgBg
+Instance.new("UICorner", islandProgFill).CornerRadius = UDim.new(1, 0)
+
+enableDrag(islandBar, main)
+
+local body = Instance.new("Frame")
+body.Name = "Body"
+body.Position = UDim2.new(0, 0, 0, 42)
+body.Size = UDim2.new(1, 0, 1, -42)
+body.BackgroundTransparency = 1
+body.Parent = main
+
+local tabBar = Instance.new("Frame")
+tabBar.Name = "TabBar"
+tabBar.Position = UDim2.new(0, 12, 0, 2)
+tabBar.Size = UDim2.new(1, -24, 0, 32)
+tabBar.BackgroundColor3 = Color3.fromRGB(23, 27, 35)
+tabBar.BorderSizePixel = 0
+tabBar.Parent = body
+Instance.new("UICorner", tabBar).CornerRadius = UDim.new(0, 9)
+
+local tabBtn1 = makeButton(tabBar, "🎤 Lirik", UDim2.new(0, 3, 0, 3), UDim2.new(0.33, -4, 1, -6), Color3.fromRGB(35, 155, 95))
+local tabBtn2 = makeButton(tabBar, "🔍 Cari & Sync", UDim2.new(0.33, 2, 0, 3), UDim2.new(0.34, -4, 1, -6), Color3.fromRGB(30, 35, 44))
+local tabBtn3 = makeButton(tabBar, "🛠️ Ekstra & Sub", UDim2.new(0.67, 1, 0, 3), UDim2.new(0.33, -4, 1, -6), Color3.fromRGB(30, 35, 44))
+
+local page1 = Instance.new("Frame", body)
+page1.Name = "PageLyrics"
+page1.Position = UDim2.new(0, 0, 0, 38)
+page1.Size = UDim2.new(1, 0, 1, -38)
+page1.BackgroundTransparency = 1
+
+local page2 = Instance.new("Frame", body)
+page2.Name = "PageSearchSync"
+page2.Position = UDim2.new(0, 0, 0, 38)
+page2.Size = UDim2.new(1, 0, 1, -38)
+page2.BackgroundTransparency = 1
+page2.Visible = false
+
+local page3 = Instance.new("Frame", body)
+page3.Name = "PageExtraSub"
+page3.Position = UDim2.new(0, 0, 0, 38)
+page3.Size = UDim2.new(1, 0, 1, -38)
+page3.BackgroundTransparency = 1
+page3.Visible = false
+
+local function switchTab(tabIndex)
+    page1.Visible = (tabIndex == 1)
+    page2.Visible = (tabIndex == 2)
+    page3.Visible = (tabIndex == 3)
+    tabBtn1.BackgroundColor3 = (tabIndex == 1) and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(30, 35, 44)
+    tabBtn2.BackgroundColor3 = (tabIndex == 2) and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(30, 35, 44)
+    tabBtn3.BackgroundColor3 = (tabIndex == 3) and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(30, 35, 44)
+end
+
+tabBtn1.MouseButton1Click:Connect(function() switchTab(1) end)
+tabBtn2.MouseButton1Click:Connect(function() switchTab(2) end)
+tabBtn3.MouseButton1Click:Connect(function() switchTab(3) end)
+
+local lyricCard = Instance.new("TextButton")
+lyricCard.Name = "LyricCard"
+lyricCard.Position = UDim2.new(0, 12, 0, 4)
+lyricCard.Size = UDim2.new(1, -24, 0, 146)
+lyricCard.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
+lyricCard.BorderSizePixel = 0
+lyricCard.Text = ""
+lyricCard.AutoButtonColor = false
+lyricCard.ClipsDescendants = true
+lyricCard.Parent = page1
+Instance.new("UICorner", lyricCard).CornerRadius = UDim.new(0, 12)
+local cardStroke = Instance.new("UIStroke", lyricCard)
+cardStroke.Color = Color3.fromRGB(42, 50, 64)
+cardStroke.Thickness = 1
+
+local prevLine = makeLabel(lyricCard, "Previous", UDim2.new(0, 10, 0, 6), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 140, 155))
+local currentLine = makeLabel(lyricCard, "Current", UDim2.new(0, 10, 0, 28), UDim2.new(1, -20, 0, 50), "Menunggu lagu...", 16, Color3.fromRGB(255, 255, 255))
+currentLine.Font = Enum.Font.GothamBold
+
+local transLine = makeLabel(lyricCard, "Translation", UDim2.new(0, 10, 0, 80), UDim2.new(1, -20, 0, 34), "", 12, Color3.fromRGB(80, 235, 155))
+transLine.Font = Enum.Font.GothamSemibold
+
+local nextLine = makeLabel(lyricCard, "Next", UDim2.new(0, 10, 0, 118), UDim2.new(1, -20, 0, 20), "", 11, Color3.fromRGB(130, 140, 155))
+
+local timeCurrentLbl = makeLabel(page1, "TimeCurrent", UDim2.new(0, 12, 0, 156), UDim2.new(0, 42, 0, 16), "00:00", 10, Color3.fromRGB(165, 175, 185))
+timeCurrentLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local progBarBg = Instance.new("Frame")
+progBarBg.Name = "ProgressBarBg"
+progBarBg.Position = UDim2.new(0, 56, 0, 162)
+progBarBg.Size = UDim2.new(1, -112, 0, 5)
+progBarBg.BackgroundColor3 = Color3.fromRGB(36, 42, 54)
+progBarBg.BorderSizePixel = 0
+progBarBg.Parent = page1
+Instance.new("UICorner", progBarBg).CornerRadius = UDim.new(1, 0)
+
+local progBarFill = Instance.new("Frame")
+progBarFill.Name = "Fill"
+progBarFill.Size = UDim2.new(0, 0, 1, 0)
+progBarFill.BackgroundColor3 = Color3.fromRGB(40, 230, 135)
+progBarFill.BorderSizePixel = 0
+progBarFill.Parent = progBarBg
+Instance.new("UICorner", progBarFill).CornerRadius = UDim.new(1, 0)
+
+local timeTotalLbl = makeLabel(page1, "TimeTotal", UDim2.new(1, -54, 0, 156), UDim2.new(0, 42, 0, 16), "00:00", 10, Color3.fromRGB(165, 175, 185))
+timeTotalLbl.TextXAlignment = Enum.TextXAlignment.Right
+
+local chatBtn = makeButton(page1, "💬 Auto-Chat: OFF", UDim2.new(0, 12, 0, 178), UDim2.new(0, 158, 0, 34), Color3.fromRGB(36, 41, 50))
+local chatModeBtn = makeButton(page1, "🗣️ Chat: Asli", UDim2.new(0, 176, 0, 178), UDim2.new(0, 162, 0, 34), Color3.fromRGB(45, 52, 65))
+
+local transToggleBtn = makeButton(page1, "🌍 Translate: ON", UDim2.new(0, 12, 0, 218), UDim2.new(0, 158, 0, 34), Color3.fromRGB(30, 145, 90))
+local filterBtn = makeButton(page1, "🛡 Sensor Kata: ON", UDim2.new(0, 176, 0, 218), UDim2.new(0, 162, 0, 34), Color3.fromRGB(30, 145, 90))
+
+local searchBox = Instance.new("TextBox")
+searchBox.Position = UDim2.new(0, 12, 0, 6)
+searchBox.Size = UDim2.new(1, -110, 0, 34)
+searchBox.BackgroundColor3 = Color3.fromRGB(28, 32, 42)
+searchBox.TextColor3 = Color3.new(1, 1, 1)
+searchBox.PlaceholderColor3 = Color3.fromRGB(145, 152, 162)
+searchBox.PlaceholderText = "Cari judul lagu / artis..."
+searchBox.ClearTextOnFocus = false
+searchBox.Font = Enum.Font.Gotham
+searchBox.TextSize = 12
+searchBox.Text = ""
+searchBox.Parent = page2
+Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 8)
+
+local clearSearchBtn = makeButton(page2, "×", UDim2.new(1, -94, 0, 6), UDim2.new(0, 26, 0, 34), Color3.fromRGB(48, 54, 66))
+clearSearchBtn.TextSize = 14
+clearSearchBtn.MouseButton1Click:Connect(function()
+    searchBox.Text = ""
+    searchBox:CaptureFocus()
+end)
+
+local searchBtn = makeButton(page2, "CARI", UDim2.new(1, -64, 0, 6), UDim2.new(0, 52, 0, 34), Color3.fromRGB(35, 160, 95))
+
+local resultsFrame = Instance.new("ScrollingFrame")
+resultsFrame.Position = UDim2.new(0, 12, 0, 46)
+resultsFrame.Size = UDim2.new(1, -24, 0, 108)
+resultsFrame.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
+resultsFrame.BorderSizePixel = 0
+resultsFrame.ScrollBarThickness = 5
+resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+resultsFrame.Parent = page2
+Instance.new("UICorner", resultsFrame).CornerRadius = UDim.new(0, 9)
+
+local resultLayout = Instance.new("UIListLayout", resultsFrame)
+resultLayout.Padding = UDim.new(0, 4)
+resultLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local syncInfo = makeLabel(page2, "SyncInfo", UDim2.new(0, 12, 0, 160), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(40, 235, 140))
+syncInfo.TextXAlignment = Enum.TextXAlignment.Center
+
+local slowerBtn = makeButton(page2, "−", UDim2.new(0, 12, 0, 182), UDim2.new(0, 40, 0, 32))
+slowerBtn.TextSize = 16
+local speedBtn = makeButton(page2, "1.00x", UDim2.new(0, 56, 0, 182), UDim2.new(0, 70, 0, 32))
+local fasterBtn = makeButton(page2, "+", UDim2.new(0, 130, 0, 182), UDim2.new(0, 40, 0, 32))
+fasterBtn.TextSize = 16
+
+local offsetBackBtn = makeButton(page2, "−0.25s", UDim2.new(0, 178, 0, 182), UDim2.new(0, 76, 0, 32))
+local offsetForwardBtn = makeButton(page2, "+0.25s", UDim2.new(0, 260, 0, 182), UDim2.new(0, 78, 0, 32))
+
+local resetSyncBtn = makeButton(page2, "🔄 RESET & AUTO-SYNC DURASI LAGU", UDim2.new(0, 12, 0, 220), UDim2.new(1, -24, 0, 32), Color3.fromRGB(48, 58, 72))
+
+local noclipBtn = makeButton(page3, "👻 NoClip: OFF", UDim2.new(0, 12, 0, 6), UDim2.new(0, 104, 0, 32), Color3.fromRGB(36, 41, 50))
+local wallViewBtn = makeButton(page3, "🧱 Tembok: OFF", UDim2.new(0, 122, 0, 6), UDim2.new(0, 104, 0, 32), Color3.fromRGB(36, 41, 50))
+local orbitCfgBtn = makeButton(page3, "⚙ Set Orbit", UDim2.new(0, 232, 0, 6), UDim2.new(0, 106, 0, 32), Color3.fromRGB(52, 44, 72))
+
+local subCfgCard = Instance.new("Frame")
+subCfgCard.Position = UDim2.new(0, 12, 0, 44)
+subCfgCard.Size = UDim2.new(1, -24, 0, 208)
+subCfgCard.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
+subCfgCard.BorderSizePixel = 0
+subCfgCard.Parent = page3
+Instance.new("UICorner", subCfgCard).CornerRadius = UDim.new(0, 10)
+
+local subCfgTitle = makeLabel(subCfgCard, "SubCfgTitle", UDim2.new(0, 10, 0, 4), UDim2.new(1, -20, 0, 18), "📺 KUSTOMISASI POSISI & GAYA SUBTITLE", 10, Color3.fromRGB(45, 235, 135))
+subCfgTitle.Font = Enum.Font.GothamBold
+subCfgTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local subUiUpdaters = {}
+
+local function createSubSettingRow(yPos, labelText, formatStr, getVal, setVal, step, minVal, maxVal)
+    local lbl = makeLabel(subCfgCard, labelText, UDim2.new(0, 10, 0, yPos), UDim2.new(0, 130, 0, 26), labelText, 11, Color3.fromRGB(210, 215, 225))
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local btnMinus = makeButton(subCfgCard, "−", UDim2.new(0, 146, 0, yPos), UDim2.new(0, 36, 0, 26), Color3.fromRGB(38, 44, 54))
+    btnMinus.TextSize = 15
+
+    local valLbl = makeLabel(subCfgCard, "Val", UDim2.new(0, 186, 0, yPos), UDim2.new(0, 86, 0, 26), string.format(formatStr, getVal()), 11, Color3.fromRGB(45, 235, 135))
+    valLbl.Font = Enum.Font.GothamBold
+
+    local btnPlus = makeButton(subCfgCard, "+", UDim2.new(0, 276, 0, yPos), UDim2.new(0, 36, 0, 26), Color3.fromRGB(38, 44, 54))
+    btnPlus.TextSize = 15
+
+    local function refresh()
+        valLbl.Text = string.format(formatStr, getVal())
+        applySubtitleStyle()
+    end
+    table.insert(subUiUpdaters, refresh)
+
+    makeHoldable(btnMinus, function()
+        setVal(math.clamp(getVal() - step, minVal, maxVal))
+        refresh()
+    end)
+    makeHoldable(btnPlus, function()
+        setVal(math.clamp(getVal() + step, minVal, maxVal))
+        refresh()
+    end)
+end
+
+createSubSettingRow(26, "Ukuran Font Sub:", "%d px", function() return subTextSize end, function(v) subTextSize = v end, 1, 12, 36)
+createSubSettingRow(58, "Geser Kiri/Kanan X:", "%+d", function() return subOffsetX end, function(v) subOffsetX = v end, 10, -500, 500)
+createSubSettingRow(90, "Geser Atas/Bawah Y:", "%+d", function() return subOffsetY end, function(v) subOffsetY = v end, 10, -500, 300)
+
+local subBgBtn = makeButton(subCfgCard, "🎬 Kotak Cinema: OFF", UDim2.new(0, 10, 0, 126), UDim2.new(0, 148, 0, 30), Color3.fromRGB(36, 42, 52))
+local subColorBtn = makeButton(subCfgCard, "🎨 Warna: Putih", UDim2.new(0, 166, 0, 126), UDim2.new(0, 148, 0, 30), Color3.fromRGB(36, 42, 52))
+
+local subLockBtn = makeButton(subCfgCard, "🔓 Drag Sub: Bebas", UDim2.new(0, 10, 0, 164), UDim2.new(0, 148, 0, 30), Color3.fromRGB(36, 42, 52))
+local subResetBtn = makeButton(subCfgCard, "♻ Reset Posisi Sub", UDim2.new(0, 166, 0, 164), UDim2.new(0, 148, 0, 30), Color3.fromRGB(52, 60, 74))
+
+subBgBtn.MouseButton1Click:Connect(function()
+    subCinemaBg = not subCinemaBg
+    subBgBtn.Text = "🎬 Kotak Cinema: " .. (subCinemaBg and "ON" or "OFF")
+    subBgBtn.BackgroundColor3 = subCinemaBg and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 42, 52)
+    applySubtitleStyle()
+end)
+
+subColorBtn.MouseButton1Click:Connect(function()
+    subColorIndex = (subColorIndex % #subPalette) + 1
+    subColorBtn.Text = "🎨 Warna: " .. subPalette[subColorIndex].Name
+    subColorBtn.TextColor3 = subPalette[subColorIndex].Color
+    applySubtitleStyle()
+end)
+
+subLockBtn.MouseButton1Click:Connect(function()
+    subLocked = not subLocked
+    subLockBtn.Text = subLocked and "🔒 Drag Sub: Terkunci" or "🔓 Drag Sub: Bebas"
+    subLockBtn.BackgroundColor3 = subLocked and Color3.fromRGB(165, 85, 45) or Color3.fromRGB(36, 42, 52)
+end)
+
+subResetBtn.MouseButton1Click:Connect(function()
+    subOffsetX, subOffsetY, subTextSize = 0, 0, 20
+    subCinemaBg, subColorIndex = false, 1
+    subBgBtn.Text = "🎬 Kotak Cinema: OFF"
+    subBgBtn.BackgroundColor3 = Color3.fromRGB(36, 42, 52)
+    subColorBtn.Text = "🎨 Warna: Putih"
+    subColorBtn.TextColor3 = Color3.fromRGB(245, 245, 245)
+    for _, fn in ipairs(subUiUpdaters) do fn() end
+    showToast("Posisi & gaya Subtitle direset!")
+end)
+
 local orbitPanel = Instance.new("Frame")
 orbitPanel.Name = "OrbitSettingsPanel"
 orbitPanel.Size = UDim2.new(0, 280, 0, 290)
-orbitPanel.Position = UDim2.new(0.5, 178, 0.08, 0)
-orbitPanel.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
+orbitPanel.Position = UDim2.new(0.5, 182, 0.08, 0)
+orbitPanel.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
 orbitPanel.BorderSizePixel = 0
 orbitPanel.Visible = false
 orbitPanel.Active = true
@@ -821,7 +1220,7 @@ orbitStroke.Thickness = 1.5
 
 local orbitTopBar = Instance.new("Frame")
 orbitTopBar.Size = UDim2.new(1, 0, 0, 34)
-orbitTopBar.BackgroundColor3 = Color3.fromRGB(30, 32, 42)
+orbitTopBar.BackgroundColor3 = Color3.fromRGB(28, 30, 40)
 orbitTopBar.BorderSizePixel = 0
 orbitTopBar.Active = true
 orbitTopBar.Parent = orbitPanel
@@ -885,174 +1284,22 @@ orbitDirBtn.MouseButton1Click:Connect(function()
 end)
 
 orbitResetBtn.MouseButton1Click:Connect(function()
-    orbitDistance = 10.0
-    orbitHeight = 3.5
-    orbitSpeed = 0.55
-    orbitLookHeight = 1.0
-    orbitFOV = 70
-    orbitDirection = 1
+    orbitDistance, orbitHeight, orbitSpeed = 10.0, 3.5, 0.55
+    orbitLookHeight, orbitFOV, orbitDirection = 1.0, 70, 1
     orbitDirBtn.Text = "🔄 Arah: Kanan"
     for _, fn in ipairs(orbitUiUpdaters) do fn() end
 end)
 
--- ======================== MINI LYRIC BAR ========================
-local miniBar = Instance.new("Frame")
-miniBar.Name = "MiniBar"
-miniBar.Position = UDim2.new(0, 10, 0, 44)
-miniBar.Size = UDim2.new(1, -20, 0, 44)
-miniBar.BackgroundColor3 = Color3.fromRGB(27, 31, 38)
-miniBar.BorderSizePixel = 0
-miniBar.Visible = false
-miniBar.Parent = main
-Instance.new("UICorner", miniBar).CornerRadius = UDim.new(0, 8)
-
-local miniLyricText = makeLabel(miniBar, "MiniLyric", UDim2.new(0, 10, 0, 2), UDim2.new(1, -20, 0, 34), "Menunggu lagu...", 13, Color3.fromRGB(255, 255, 255))
-miniLyricText.Font = Enum.Font.GothamBold
-
-local miniProgBg = Instance.new("Frame")
-miniProgBg.Position = UDim2.new(0, 8, 1, -6)
-miniProgBg.Size = UDim2.new(1, -16, 0, 3)
-miniProgBg.BackgroundColor3 = Color3.fromRGB(45, 52, 65)
-miniProgBg.BorderSizePixel = 0
-miniProgBg.Parent = miniBar
-Instance.new("UICorner", miniProgBg).CornerRadius = UDim.new(1, 0)
-
-local miniProgFill = Instance.new("Frame")
-miniProgFill.Size = UDim2.new(0, 0, 1, 0)
-miniProgFill.BackgroundColor3 = Color3.fromRGB(30, 215, 125)
-miniProgFill.BorderSizePixel = 0
-miniProgFill.Parent = miniProgBg
-Instance.new("UICorner", miniProgFill).CornerRadius = UDim.new(1, 0)
-
--- ======================== BODY CONTAINER ========================
-local body = Instance.new("Frame")
-body.Name = "Body"
-body.Position = UDim2.new(0, 0, 0, 42)
-body.Size = UDim2.new(1, 0, 1, -42)
-body.BackgroundTransparency = 1
-body.Parent = main
-
-local searchBox = Instance.new("TextBox")
-searchBox.Position = UDim2.new(0, 12, 0, 4)
-searchBox.Size = UDim2.new(1, -110, 0, 32)
-searchBox.BackgroundColor3 = Color3.fromRGB(32, 36, 44)
-searchBox.TextColor3 = Color3.new(1, 1, 1)
-searchBox.PlaceholderColor3 = Color3.fromRGB(145, 152, 162)
-searchBox.PlaceholderText = "Cari judul lagu / artis..."
-searchBox.ClearTextOnFocus = false
-searchBox.Font = Enum.Font.Gotham
-searchBox.TextSize = 12
-searchBox.Text = ""
-searchBox.Parent = body
-Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 7)
-
-local clearSearchBtn = makeButton(body, "×", UDim2.new(1, -94, 0, 4), UDim2.new(0, 26, 0, 32), Color3.fromRGB(50, 56, 66))
-clearSearchBtn.TextSize = 14
-clearSearchBtn.MouseButton1Click:Connect(function()
-    searchBox.Text = ""
-    searchBox:CaptureFocus()
-end)
-
-local searchBtn = makeButton(body, "CARI", UDim2.new(1, -64, 0, 4), UDim2.new(0, 52, 0, 32), Color3.fromRGB(30, 160, 95))
-
-local resultsFrame = Instance.new("ScrollingFrame")
-resultsFrame.Position = UDim2.new(0, 12, 0, 42)
-resultsFrame.Size = UDim2.new(1, -24, 0, 64)
-resultsFrame.BackgroundColor3 = Color3.fromRGB(26, 30, 37)
-resultsFrame.BorderSizePixel = 0
-resultsFrame.ScrollBarThickness = 5
-resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-resultsFrame.Parent = body
-Instance.new("UICorner", resultsFrame).CornerRadius = UDim.new(0, 7)
-
-local resultLayout = Instance.new("UIListLayout", resultsFrame)
-resultLayout.Padding = UDim.new(0, 4)
-resultLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-local lyricCard = Instance.new("TextButton")
-lyricCard.Name = "LyricCard"
-lyricCard.Position = UDim2.new(0, 12, 0, 112)
-lyricCard.Size = UDim2.new(1, -24, 0, 96)
-lyricCard.BackgroundColor3 = Color3.fromRGB(25, 29, 36)
-lyricCard.BorderSizePixel = 0
-lyricCard.Text = ""
-lyricCard.AutoButtonColor = false
-lyricCard.Parent = body
-Instance.new("UICorner", lyricCard).CornerRadius = UDim.new(0, 9)
-
-local prevLine = makeLabel(lyricCard, "Previous", UDim2.new(0, 8, 0, 4), UDim2.new(1, -16, 0, 20), "", 11, Color3.fromRGB(135, 143, 153))
-local currentLine = makeLabel(lyricCard, "Current", UDim2.new(0, 8, 0, 25), UDim2.new(1, -16, 0, 44), "Menunggu lagu...", 15, Color3.fromRGB(255, 255, 255))
-currentLine.Font = Enum.Font.GothamBold
-local nextLine = makeLabel(lyricCard, "Next", UDim2.new(0, 8, 0, 71), UDim2.new(1, -16, 0, 20), "", 11, Color3.fromRGB(135, 143, 153))
-
-lyricCard.MouseButton1Click:Connect(function()
-    local txt = currentLine.Text
-    if txt ~= "" and txt ~= "Menunggu lagu..." and txt ~= "Mendeteksi lagu..." and txt ~= "Lirik tidak tersedia." and txt ~= "♪" then
-        sendChat(txt)
-    end
-end)
-
-local timeCurrentLbl = makeLabel(body, "TimeCurrent", UDim2.new(0, 12, 0, 213), UDim2.new(0, 42, 0, 16), "00:00", 10, Color3.fromRGB(165, 175, 185))
-timeCurrentLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-local progBarBg = Instance.new("Frame")
-progBarBg.Name = "ProgressBarBg"
-progBarBg.Position = UDim2.new(0, 54, 0, 219)
-progBarBg.Size = UDim2.new(1, -108, 0, 5)
-progBarBg.BackgroundColor3 = Color3.fromRGB(38, 44, 54)
-progBarBg.BorderSizePixel = 0
-progBarBg.Parent = body
-Instance.new("UICorner", progBarBg).CornerRadius = UDim.new(1, 0)
-
-local progBarFill = Instance.new("Frame")
-progBarFill.Name = "Fill"
-progBarFill.Size = UDim2.new(0, 0, 1, 0)
-progBarFill.BackgroundColor3 = Color3.fromRGB(30, 215, 125)
-progBarFill.BorderSizePixel = 0
-progBarFill.Parent = progBarBg
-Instance.new("UICorner", progBarFill).CornerRadius = UDim.new(1, 0)
-
-local timeTotalLbl = makeLabel(body, "TimeTotal", UDim2.new(1, -54, 0, 213), UDim2.new(0, 42, 0, 16), "00:00", 10, Color3.fromRGB(165, 175, 185))
-timeTotalLbl.TextXAlignment = Enum.TextXAlignment.Right
-
-local syncInfo = makeLabel(body, "SyncInfo", UDim2.new(0, 12, 0, 234), UDim2.new(1, -24, 0, 18), "Kecepatan: 1.00x   •   Offset: +0.00s", 11, Color3.fromRGB(30, 230, 135))
-syncInfo.TextXAlignment = Enum.TextXAlignment.Center
-
-local slowerBtn = makeButton(body, "−", UDim2.new(0, 12, 0, 256), UDim2.new(0, 38, 0, 32))
-slowerBtn.TextSize = 16
-local speedBtn = makeButton(body, "1.00x", UDim2.new(0, 54, 0, 256), UDim2.new(0, 68, 0, 32))
-local fasterBtn = makeButton(body, "+", UDim2.new(0, 126, 0, 256), UDim2.new(0, 38, 0, 32))
-fasterBtn.TextSize = 16
-
-local offsetBackBtn = makeButton(body, "−0.25s", UDim2.new(0, 172, 0, 256), UDim2.new(0, 74, 0, 32))
-local offsetForwardBtn = makeButton(body, "+0.25s", UDim2.new(0, 252, 0, 256), UDim2.new(0, 76, 0, 32))
-
--- Baris Bawah 1: Auto Sync, Safe Filter, & Auto-Chat
-local resetSyncBtn = makeButton(body, "🔄 SYNC", UDim2.new(0, 12, 0, 296), UDim2.new(0, 92, 0, 32), Color3.fromRGB(52, 62, 74))
-local filterBtn = makeButton(body, "🛡 Filter: ON", UDim2.new(0, 110, 0, 296), UDim2.new(0, 102, 0, 32), Color3.fromRGB(30, 145, 90))
-local chatBtn = makeButton(body, "💬 Chat: OFF", UDim2.new(0, 218, 0, 296), UDim2.new(0, 110, 0, 32), Color3.fromRGB(39, 45, 51))
-
--- Baris Bawah 2 (BARU): Tombol NoClip & View Tembok Transparan (Invisicam)
-local noclipBtn = makeButton(body, "👻 NoClip: OFF", UDim2.new(0, 12, 0, 334), UDim2.new(0, 154, 0, 32), Color3.fromRGB(39, 45, 51))
-local wallViewBtn = makeButton(body, "🧱 Tembok Invis: OFF", UDim2.new(0, 174, 0, 334), UDim2.new(0, 154, 0, 32), Color3.fromRGB(39, 45, 51))
-
-local footerHint = makeLabel(body, "Hint", UDim2.new(0, 12, 0, 372), UDim2.new(1, -24, 0, 20), "🎥: Orbit  |  ⚙: Setting  |  👻: Tembus  |  🧱: Tembok Transparan", 9, Color3.fromRGB(130, 138, 150))
-
--- ======================== LOGIKA NOCLIP & VIEW TEMBOK TRANSPARAN ========================
 local function restoreCharacterCollision()
     for part, canCol in pairs(savedCanCollide) do
-        if part and part.Parent then
-            part.CanCollide = canCol
-        end
+        if part and part.Parent then part.CanCollide = canCol end
     end
     savedCanCollide = {}
 end
 
 local function restoreFadedWalls()
     for part, origLTM in pairs(fadedWallParts) do
-        if part and part.Parent then
-            part.LocalTransparencyModifier = origLTM
-        end
+        if part and part.Parent then part.LocalTransparencyModifier = origLTM end
     end
     fadedWallParts = {}
 end
@@ -1071,20 +1318,19 @@ end
 noclipBtn.MouseButton1Click:Connect(function()
     isNoClipEnabled = not isNoClipEnabled
     noclipBtn.Text = "👻 NoClip: " .. (isNoClipEnabled and "ON" or "OFF")
-    noclipBtn.BackgroundColor3 = isNoClipEnabled and Color3.fromRGB(205, 115, 45) or Color3.fromRGB(39, 45, 51)
-    if not isNoClipEnabled then
-        restoreCharacterCollision()
-    end
+    noclipBtn.BackgroundColor3 = isNoClipEnabled and Color3.fromRGB(205, 115, 45) or Color3.fromRGB(36, 41, 50)
+    if not isNoClipEnabled then restoreCharacterCollision() end
+    showToast("NoClip " .. (isNoClipEnabled and "Diaktifkan" or "Dimatikan"))
 end)
 
 wallViewBtn.MouseButton1Click:Connect(function()
     isWallViewEnabled = not isWallViewEnabled
-    wallViewBtn.Text = "🧱 Tembok Invis: " .. (isWallViewEnabled and "ON" or "OFF")
-    wallViewBtn.BackgroundColor3 = isWallViewEnabled and Color3.fromRGB(50, 140, 210) or Color3.fromRGB(39, 45, 51)
+    wallViewBtn.Text = "🧱 Tembok: " .. (isWallViewEnabled and "ON" or "OFF")
+    wallViewBtn.BackgroundColor3 = isWallViewEnabled and Color3.fromRGB(50, 140, 210) or Color3.fromRGB(36, 41, 50)
     applyWallOcclusionMode()
+    showToast("View Tembok Transparan " .. (isWallViewEnabled and "ON" or "OFF"))
 end)
 
--- Loop Stepped Khusus NoClip agar karakter bisa menembus objek dengan mulus
 RunService.Stepped:Connect(function()
     if not gui.Parent or not isNoClipEnabled then return end
     local char = player.Character
@@ -1099,7 +1345,6 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- ======================== LOGIKA TOMBOL & FITUR UTAMA ========================
 local function resetCameraToNormal()
     local cam = workspace.CurrentCamera
     local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
@@ -1111,7 +1356,7 @@ local function resetCameraToNormal()
 end
 
 local function updateOrbitButtonVisuals()
-    orbitBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(39, 45, 55)
+    orbitBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(36, 42, 52)
     orbitToggleInsideBtn.Text = "Status Orbit: " .. (isOrbitEnabled and "ON (Aktif)" or "OFF (Mati)")
     orbitToggleInsideBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(135, 75, 205) or Color3.fromRGB(39, 45, 55)
 end
@@ -1125,6 +1370,7 @@ local function toggleOrbitState()
         resetCameraToNormal()
     end
     updateOrbitButtonVisuals()
+    showToast("Kamera Orbit " .. (isOrbitEnabled and "ON" or "OFF"), Color3.fromRGB(140, 85, 215))
 end
 
 orbitBtn.MouseButton1Click:Connect(toggleOrbitState)
@@ -1132,41 +1378,56 @@ orbitToggleInsideBtn.MouseButton1Click:Connect(toggleOrbitState)
 
 orbitCfgBtn.MouseButton1Click:Connect(function()
     orbitPanel.Visible = not orbitPanel.Visible
-    orbitCfgBtn.BackgroundColor3 = orbitPanel.Visible and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(39, 45, 55)
+    orbitCfgBtn.BackgroundColor3 = orbitPanel.Visible and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(52, 44, 72)
 end)
 
 closeOrbitPanelBtn.MouseButton1Click:Connect(function()
     orbitPanel.Visible = false
-    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(39, 45, 55)
+    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(52, 44, 72)
 end)
 
 subToggleBtn.MouseButton1Click:Connect(function()
     isSubtitleEnabled = not isSubtitleEnabled
     subtitleFrame.Visible = isSubtitleEnabled
-    subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(30, 150, 90) or Color3.fromRGB(39, 45, 55)
+    subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(36, 42, 52)
+    showToast("Subtitle Layar " .. (isSubtitleEnabled and "ON" or "OFF"))
 end)
 
-minBtn.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
+local function setMinimizeIsland(state)
+    isMinimized = state
     if isMinimized then
-        minBtn.Text = "+"
+        topBar.Visible = false
         body.Visible = false
-        miniBar.Visible = true
-        TweenService:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MINI_SIZE}):Play()
+        toastBanner.Visible = false
+        islandBar.Visible = true
+        mainCorner.CornerRadius = UDim.new(1, 0)
+        TweenService:Create(main, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = ISLAND_SIZE
+        }):Play()
     else
-        minBtn.Text = "—"
-        miniBar.Visible = false
+        islandBar.Visible = false
+        topBar.Visible = true
         body.Visible = true
-        TweenService:Create(main, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = FULL_SIZE}):Play()
+        toastBanner.Visible = true
+        mainCorner.CornerRadius = UDim.new(0, 16)
+        TweenService:Create(main, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = FULL_SIZE
+        }):Play()
     end
-end)
+end
 
-pillModeBtn.MouseButton1Click:Connect(function()
+minBtn.MouseButton1Click:Connect(function() setMinimizeIsland(true) end)
+islandExpandBtn.MouseButton1Click:Connect(function() setMinimizeIsland(false) end)
+
+local function enterPillMode()
     main.Visible = false
     orbitPanel.Visible = false
-    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(39, 45, 55)
+    orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(52, 44, 72)
     floatBtn.Visible = true
-end)
+end
+
+pillModeBtn.MouseButton1Click:Connect(enterPillMode)
+islandPillBtn.MouseButton1Click:Connect(enterPillMode)
 
 floatBtn.MouseButton1Click:Connect(function()
     floatBtn.Visible = false
@@ -1176,7 +1437,7 @@ end)
 muteBtn.MouseButton1Click:Connect(function()
     isMutedLocally = not isMutedLocally
     muteBtn.Text = isMutedLocally and "🔇" or "🔊"
-    muteBtn.BackgroundColor3 = isMutedLocally and Color3.fromRGB(135, 55, 55) or Color3.fromRGB(39, 45, 55)
+    muteBtn.BackgroundColor3 = isMutedLocally and Color3.fromRGB(135, 55, 55) or Color3.fromRGB(36, 42, 52)
     if activeSound then
         if isMutedLocally then
             originalVolume = activeSound.Volume > 0 and activeSound.Volume or originalVolume
@@ -1188,21 +1449,10 @@ muteBtn.MouseButton1Click:Connect(function()
 end)
 
 closeBtn.MouseButton1Click:Connect(function()
-    if isMutedLocally and activeSound then
-        activeSound.Volume = originalVolume
-    end
-    if isOrbitEnabled then
-        isOrbitEnabled = false
-        resetCameraToNormal()
-    end
-    if isNoClipEnabled then
-        isNoClipEnabled = false
-        restoreCharacterCollision()
-    end
-    if isWallViewEnabled then
-        isWallViewEnabled = false
-        applyWallOcclusionMode()
-    end
+    if isMutedLocally and activeSound then activeSound.Volume = originalVolume end
+    if isOrbitEnabled then isOrbitEnabled = false; resetCameraToNormal() end
+    if isNoClipEnabled then isNoClipEnabled = false; restoreCharacterCollision() end
+    if isWallViewEnabled then isWallViewEnabled = false; applyWallOcclusionMode() end
     gui:Destroy()
 end)
 
@@ -1210,7 +1460,7 @@ local function updateSyncText()
     local modeTag = isAutoRatioActive and " (Auto)" or ""
     syncInfo.Text = string.format("Kecepatan: %.2fx%s   •   Offset: %+.2fs", lyricSpeed, modeTag, syncOffset)
     speedBtn.Text = string.format("%.2fx", lyricSpeed)
-    speedBtn.TextColor3 = isAutoRatioActive and Color3.fromRGB(30, 230, 135) or Color3.fromRGB(245, 245, 245)
+    speedBtn.TextColor3 = isAutoRatioActive and Color3.fromRGB(40, 235, 140) or Color3.fromRGB(245, 245, 245)
 end
 
 local function applyDurationAutoSync()
@@ -1266,52 +1516,122 @@ makeHoldable(offsetForwardBtn, function()
 end)
 
 resetSyncBtn.MouseButton1Click:Connect(function()
-    manualSpeedOverride = false
-    autoSpeedSynced = false
-    isAutoRatioActive = false
-    lyricSpeed = 1.00
-    syncOffset = 0.00
-    if not applyDurationAutoSync() then
-        updateSyncText()
-    end
+    manualSpeedOverride, autoSpeedSynced, isAutoRatioActive = false, false, false
+    lyricSpeed, syncOffset = 1.00, 0.00
+    if not applyDurationAutoSync() then updateSyncText() end
+    showToast("Sinkronisasi direset ke Auto-Sync!")
 end)
 updateSyncText()
 
-local function updateDisplayedLyric(prevTxt, currTxt, nextTxt)
+local function buildChatLine(origTxt, indoTxt)
+    local cleanOrig = sanitizeLyricText(origTxt or "")
+    local cleanIndo = sanitizeLyricText(indoTxt or "")
+    if chatLangMode == 2 and cleanIndo ~= "" then
+        return cleanIndo
+    elseif chatLangMode == 3 and cleanIndo ~= "" then
+        return cleanOrig .. " (" .. cleanIndo .. ")"
+    end
+    return cleanOrig
+end
+
+local function updateDisplayedLyric(prevTxt, currTxt, nextTxt, indoTxt, animatePop)
     local sPrev = sanitizeLyricText(prevTxt or "")
     local sCurr = sanitizeLyricText(currTxt or "")
     local sNext = sanitizeLyricText(nextTxt or "")
+    local sIndo = (translateEnabled and indoTxt and indoTxt ~= "") and sanitizeLyricText(indoTxt) or ""
 
     prevLine.Text = sPrev
     currentLine.Text = sCurr
+    transLine.Text = sIndo ~= "" and ("🌍 " .. sIndo) or ""
     nextLine.Text = sNext
-    miniLyricText.Text = sCurr
+
+    islandLyric.Text = sCurr
+    islandTrans.Text = sIndo
+
     subMainText.Text = sCurr
+    subTransText.Text = sIndo
     subNextText.Text = sNext
+
+    if animatePop then
+        currentLine.Position = UDim2.new(0, 10, 0, 34)
+        currentLine.TextTransparency = 0.35
+        TweenService:Create(currentLine, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0, 10, 0, 28),
+            TextTransparency = 0
+        }):Play()
+
+        if sIndo ~= "" then
+            transLine.Position = UDim2.new(0, 10, 0, 86)
+            transLine.TextTransparency = 0.45
+            TweenService:Create(transLine, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0, 10, 0, 80),
+                TextTransparency = 0
+            }):Play()
+        end
+    end
 end
 
-filterBtn.MouseButton1Click:Connect(function()
-    safeFilterEnabled = not safeFilterEnabled
-    filterBtn.Text = "🛡 Filter: " .. (safeFilterEnabled and "ON" or "OFF")
-    filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(39, 45, 51)
+local function refreshCurrentLyricDisplay(animatePop)
     if currentIndex > 0 and lyrics[currentIndex] then
         local p = 1
         while lyrics[currentIndex - p] and lyrics[currentIndex - p].Text == "" do p += 1 end
         local n = 1
         while lyrics[currentIndex + n] and lyrics[currentIndex + n].Text == "" do n += 1 end
+        local itemCurr = lyrics[currentIndex]
         updateDisplayedLyric(
             lyrics[currentIndex - p] and lyrics[currentIndex - p].Text or "",
-            lyrics[currentIndex].Text ~= "" and lyrics[currentIndex].Text or "♪",
-            lyrics[currentIndex + n] and lyrics[currentIndex + n].Text or ""
+            itemCurr.Text ~= "" and itemCurr.Text or "♪",
+            lyrics[currentIndex + n] and lyrics[currentIndex + n].Text or "",
+            itemCurr.Trans or "",
+            animatePop
         )
+    end
+end
+
+lyricCard.MouseButton1Click:Connect(function()
+    if currentIndex > 0 and lyrics[currentIndex] then
+        local itemCurr = lyrics[currentIndex]
+        if itemCurr.Text ~= "" then
+            sendChat(buildChatLine(itemCurr.Text, itemCurr.Trans))
+            cardStroke.Color = Color3.fromRGB(40, 235, 140)
+            task.delay(0.25, function()
+                if cardStroke then cardStroke.Color = Color3.fromRGB(42, 50, 64) end
+            end)
+        end
     end
 end)
 
 chatBtn.MouseButton1Click:Connect(function()
     autoChat = not autoChat
     lastSentLine = ""
-    chatBtn.Text = "💬 Chat: " .. (autoChat and "ON" or "OFF")
-    chatBtn.BackgroundColor3 = autoChat and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(39, 45, 51)
+    chatBtn.Text = "💬 Auto-Chat: " .. (autoChat and "ON" or "OFF")
+    chatBtn.BackgroundColor3 = autoChat and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(36, 41, 50)
+    showToast("Auto-Chat " .. (autoChat and "Diaktifkan" or "Dimatikan"))
+end)
+
+chatModeBtn.MouseButton1Click:Connect(function()
+    chatLangMode = (chatLangMode % 3) + 1
+    chatModeBtn.Text = "🗣️ Chat: " .. chatLangNames[chatLangMode]
+    showToast("Mode Bahasa Chat: " .. chatLangNames[chatLangMode])
+end)
+
+transToggleBtn.MouseButton1Click:Connect(function()
+    translateEnabled = not translateEnabled
+    transToggleBtn.Text = "🌍 Translate: " .. (translateEnabled and "ON" or "OFF")
+    transToggleBtn.BackgroundColor3 = translateEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
+    applySubtitleStyle()
+    if translateEnabled and #lyrics > 0 then
+        transToken += 1
+        prefetchTranslations(lyrics, transToken)
+    end
+    refreshCurrentLyricDisplay(false)
+end)
+
+filterBtn.MouseButton1Click:Connect(function()
+    safeFilterEnabled = not safeFilterEnabled
+    filterBtn.Text = "🛡 Sensor Kata: " .. (safeFilterEnabled and "ON" or "OFF")
+    filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
+    refreshCurrentLyricDisplay(false)
 end)
 
 local resultButtons = {}
@@ -1328,11 +1648,10 @@ local function activateResult(item, selectedBtn)
     lyrics = item.Lyrics or {}
     currentIndex = 0
     lastSentLine = ""
-    autoSpeedSynced = false
-    isAutoRatioActive = false
+    autoSpeedSynced, isAutoRatioActive = false, false
 
     for _, btn in ipairs(resultButtons) do
-        btn.BackgroundColor3 = (btn == selectedBtn) and Color3.fromRGB(30, 135, 80) or Color3.fromRGB(35, 40, 48)
+        btn.BackgroundColor3 = (btn == selectedBtn) and Color3.fromRGB(35, 145, 85) or Color3.fromRGB(32, 37, 46)
     end
 
     if not manualSpeedOverride then
@@ -1342,26 +1661,30 @@ local function activateResult(item, selectedBtn)
     updateSyncText()
 
     status.Text = item.Title .. " — " .. item.Artist
-    updateDisplayedLyric("", #lyrics > 0 and "♪ Lirik siap, menunggu sinkronisasi..." or "Lirik kosong.", "")
+    updateDisplayedLyric("", #lyrics > 0 and "♪ Lirik siap, menunggu sinkronisasi..." or "Lirik kosong.", "", "", false)
+    showToast("Lirik dimuat: " .. item.Title)
+
+    transToken += 1
+    if translateEnabled and #lyrics > 0 then
+        prefetchTranslations(lyrics, transToken)
+    end
 end
 
 local function showResults(items)
     clearResults()
     if #items == 0 then
         status.Text = "Lirik tersinkronisasi tidak ditemukan."
-        updateDisplayedLyric("", "Lirik tidak tersedia.", "")
+        updateDisplayedLyric("", "Lirik tidak tersedia.", "", "", false)
         return
     end
     for i, item in ipairs(items) do
         local durText = item.Duration > 0 and string.format(" (%d:%02d)", math.floor(item.Duration / 60), math.floor(item.Duration % 60)) or ""
-        local b = makeButton(resultsFrame, "  " .. item.Title .. " — " .. item.Artist .. durText, UDim2.new(), UDim2.new(1, -6, 0, 28), Color3.fromRGB(35, 40, 48))
+        local b = makeButton(resultsFrame, "  " .. item.Title .. " — " .. item.Artist .. durText, UDim2.new(), UDim2.new(1, -6, 0, 28), Color3.fromRGB(32, 37, 46))
         b.LayoutOrder = i
         b.TextXAlignment = Enum.TextXAlignment.Left
         b.TextTruncate = Enum.TextTruncate.AtEnd
         table.insert(resultButtons, b)
-        b.MouseButton1Click:Connect(function()
-            activateResult(item, b)
-        end)
+        b.MouseButton1Click:Connect(function() activateResult(item, b) end)
     end
     task.defer(function()
         resultsFrame.CanvasSize = UDim2.new(0, 0, 0, resultLayout.AbsoluteContentSize.Y + 6)
@@ -1378,14 +1701,10 @@ local function doSearch(query, fallbackQueries)
 
     task.spawn(function()
         local queriesToTry = {}
-        if query and query ~= "" then
-            table.insert(queriesToTry, query)
-        end
+        if query and query ~= "" then table.insert(queriesToTry, query) end
         if type(fallbackQueries) == "table" then
             for _, q in ipairs(fallbackQueries) do
-                if q and q ~= "" and q ~= query then
-                    table.insert(queriesToTry, q)
-                end
+                if q and q ~= "" and q ~= query then table.insert(queriesToTry, q) end
             end
         end
 
@@ -1403,9 +1722,7 @@ local function doSearch(query, fallbackQueries)
         end
 
         if thisSearch ~= searchId then return end
-        if matchedQuery ~= "" then
-            searchBox.Text = matchedQuery
-        end
+        if matchedQuery ~= "" then searchBox.Text = matchedQuery end
         showResults(finalResults)
     end)
 end
@@ -1414,9 +1731,7 @@ searchBtn.MouseButton1Click:Connect(function()
     doSearch(searchBox.Text, {cleanSongName(searchBox.Text)})
 end)
 searchBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        doSearch(searchBox.Text, {cleanSongName(searchBox.Text)})
-    end
+    if enterPressed then doSearch(searchBox.Text, {cleanSongName(searchBox.Text)}) end
 end)
 
 local function getInGameMusicGuiTitle()
@@ -1428,9 +1743,7 @@ local function getInGameMusicGuiTitle()
             if mName and mName:IsA("TextLabel") then
                 guiTitle = mName.Text
                 local sArtist = mName:FindFirstChild("ArtistName")
-                if sArtist and sArtist:IsA("TextLabel") then
-                    guiArtist = sArtist.Text
-                end
+                if sArtist and sArtist:IsA("TextLabel") then guiArtist = sArtist.Text end
             end
         end
     end)
@@ -1457,19 +1770,16 @@ task.spawn(function()
             lyrics = {}
             currentIndex = 0
             lastSentLine = ""
-            manualSpeedOverride = false
-            autoSpeedSynced = false
-            isAutoRatioActive = false
-            lyricSpeed = 1.00
-            syncOffset = 0.00
+            manualSpeedOverride, autoSpeedSynced, isAutoRatioActive = false, false, false
+            lyricSpeed, syncOffset = 1.00, 0.00
             updateSyncText()
 
             progBarFill.Size = UDim2.new(0, 0, 1, 0)
-            miniProgFill.Size = UDim2.new(0, 0, 1, 0)
+            islandProgFill.Size = UDim2.new(0, 0, 1, 0)
             timeCurrentLbl.Text = "00:00"
             timeTotalLbl.Text = "00:00"
 
-            updateDisplayedLyric("", "Mendeteksi lagu...", "")
+            updateDisplayedLyric("", "Mendeteksi lagu...", "", "", false)
             status.Text = "Membaca metadata audio..."
 
             task.spawn(function()
@@ -1484,9 +1794,7 @@ task.spawn(function()
                     local info = safeCall(function()
                         return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
                     end)
-                    if info and info.Name then
-                        rawName = info.Name
-                    end
+                    if info and info.Name then rawName = info.Name end
                 end
 
                 local cleanedRaw = cleanSongName(rawName)
@@ -1505,24 +1813,18 @@ task.spawn(function()
 
                 if displayQuery ~= "" then
                     searchBox.Text = displayQuery
-                    doSearch(displayQuery, {
-                        guiTitle,
-                        cleanedRaw,
-                        aggressiveRaw,
-                        rawName
-                    })
+                    doSearch(displayQuery, {guiTitle, cleanedRaw, aggressiveRaw, rawName})
                 else
                     searchBox.Text = ""
                     status.Text = "Audio ID: " .. tostring(assetId or "Custom") .. " (Cari manual)"
-                    updateDisplayedLyric("", "Judul lagu tidak terdeteksi.", "")
+                    updateDisplayedLyric("", "Judul lagu tidak terdeteksi.", "", "", false)
                 end
             end)
         elseif not sound and activeSound then
-            activeSound = nil
-            activeSoundId = nil
+            activeSound, activeSoundId = nil, nil
             status.Text = "Menunggu musik diputar..."
             progBarFill.Size = UDim2.new(0, 0, 1, 0)
-            miniProgFill.Size = UDim2.new(0, 0, 1, 0)
+            islandProgFill.Size = UDim2.new(0, 0, 1, 0)
             timeCurrentLbl.Text = "00:00"
             timeTotalLbl.Text = "00:00"
         end
@@ -1530,9 +1832,12 @@ task.spawn(function()
     end
 end)
 
--- ======================== ORBIT KAMERA & RAYCAST TEMBOK TRANSPARAN ========================
 RunService.RenderStepped:Connect(function(dt)
     if not gui.Parent then return end
+
+    if isMinimized and activeSound and activeSound.IsPlaying then
+        islandDisc.Rotation = (islandDisc.Rotation + dt * 90) % 360
+    end
 
     local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1558,7 +1863,6 @@ RunService.RenderStepped:Connect(function(dt)
         resetCameraToNormal()
     end
 
-    -- Jika View Tembok Invis aktif, buat tembok yang menghalangi kamera ke karakter menjadi transparan
     if isWallViewEnabled and cam and hrp then
         restoreFadedWalls()
         local okParts, obstructing = pcall(function()
@@ -1575,13 +1879,10 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- ======================== SINKRONISASI & PROGRESS BAR REAL-TIME ========================
 RunService.Heartbeat:Connect(function()
     if not gui.Parent or not activeSound or not activeSound.IsPlaying then return end
 
-    if isMutedLocally then
-        activeSound.Volume = 0
-    end
+    if isMutedLocally then activeSound.Volume = 0 end
 
     local curTime = activeSound.TimePosition or 0
     local totTime = activeSound.TimeLength or 0
@@ -1594,7 +1895,7 @@ RunService.Heartbeat:Connect(function()
 
     local progressRatio = totTime > 0 and math.clamp(curTime / totTime, 0, 1) or 0
     progBarFill.Size = UDim2.new(progressRatio, 0, 1, 0)
-    miniProgFill.Size = UDim2.new(progressRatio, 0, 1, 0)
+    islandProgFill.Size = UDim2.new(progressRatio, 0, 1, 0)
 
     if activeItem and not autoSpeedSynced and not manualSpeedOverride and activeSound.TimeLength > 5 then
         applyDurationAutoSync()
@@ -1626,22 +1927,28 @@ RunService.Heartbeat:Connect(function()
         local currTxt = text ~= "" and text or "♪"
         local nextTxt = lyrics[found + n] and lyrics[found + n].Text or ""
 
-        updateDisplayedLyric(prevTxt, currTxt, nextTxt)
+        if translateEnabled and line.Trans == nil and text ~= "" and text ~= "♪" then
+            task.spawn(function()
+                local tr = translateLineToIndo(text)
+                line.Trans = tr
+                if currentIndex == found then
+                    refreshCurrentLyricDisplay(false)
+                end
+            end)
+        end
 
-        local safeChatText = sanitizeLyricText(text)
-        if autoChat and safeChatText ~= "" and safeChatText ~= lastSentLine then
-            lastSentLine = safeChatText
-            sendChat(safeChatText)
+        updateDisplayedLyric(prevTxt, currTxt, nextTxt, line.Trans or "", true)
+
+        if autoChat and text ~= "" then
+            local chatPayload = buildChatLine(text, line.Trans)
+            if chatPayload ~= "" and chatPayload ~= lastSentLine then
+                lastSentLine = chatPayload
+                sendChat(chatPayload)
+            end
         end
     end
 end)
 
-pcall(function()
-    StarterGui:SetCore("SendNotification", {
-        Title = "Koplingtify Lite",
-        Text = "NoClip & Wall View siap digunakan!",
-        Duration = 3
-    })
-end)
-
-print("Koplingtify Lite (NoClip + Wall View + Orbit + Safe Filter) loaded.")
+applySubtitleStyle()
+showToast("Koplingtify Lite v2.0 siap digunakan!")
+print("Koplingtify Lite v2.0 loaded.")
