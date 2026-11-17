@@ -1,33 +1,57 @@
 -- =================================================================================
--- KOPLINGTIFY LITE v2.5 - EXPANDED NON-REPLACEMENT BYPASS FILTER (KOPLINGTIFY_FILTER.luau)
+-- KOPLINGTIFY LITE v2.5 - MULTI-LAYER BYPASS FILTER (KOPLINGTIFY_FILTER.luau)
 -- =================================================================================
 local FilterModule = {}
 
 -- Pilihan Mode Bypass:
--- 1 = Homoglyph (Mengganti huruf vokal dengan karakter Cyrillic identik, terlihat 100% murni)
--- 2 = Zero-Width / Soft Separator (Menyisipkan karakter tak terlihat di tengah kata)
--- 3 = Simbol Visual (Menyisipkan karakter titik tengah '·' seperti "de·pressed")
+-- 1 = Homoglyph + Zero-Width (Tampilan murni tanpa titik, huruf diganti Unicode identik)
+-- 2 = Multi Zero-Width (Menyisipkan karakter tak terlihat di setiap 2 huruf)
+-- 3 = Simbol Visual Suku Kata + Zero-Width (Contoh: "ku·ba·yang·kan tu·buh·mu")
 FilterModule.BypassMode = 3
 
+local ZWS = "\226\128\141" -- Zero-Width Joiner (U+200D)
+local ZWNJ = "\226\128\140" -- Zero-Width Non-Joiner (U+200C)
+
+-- Peta Homoglyph Lengkap (Termasuk huruf 'u' yang sebelumnya belum ada)
 local homoglyphMap = {
-    ["a"] = "а", -- U+0430
-    ["e"] = "е", -- U+0435
-    ["i"] = "і", -- U+0456
-    ["o"] = "о", -- U+043E
-    ["c"] = "с", -- U+0441
-    ["p"] = "р", -- U+0440
-    ["x"] = "х", -- U+0445
-    ["y"] = "у", -- U+0443
+    ["a"] = "а", -- Cyrillic a (U+0430)
+    ["e"] = "е", -- Cyrillic ie (U+0435)
+    ["i"] = "і", -- Ukrainian i (U+0456)
+    ["o"] = "о", -- Cyrillic o (U+043E)
+    ["u"] = "υ", -- Greek upsilon (U+03C5) - mengatasi kata "tubuhmu", "kubayangkan"
+    ["c"] = "с", -- Cyrillic es (U+0441)
+    ["p"] = "р", -- Cyrillic er (U+0440)
+    ["x"] = "х", -- Cyrillic ha (U+0445)
+    ["y"] = "у", -- Cyrillic u (U+0443)
     ["A"] = "А",
     ["E"] = "Е",
     ["I"] = "І",
     ["O"] = "О",
+    ["U"] = "Ս", -- Armenian Feh/Sev (mirip U kapital)
     ["C"] = "С",
     ["P"] = "Р",
     ["X"] = "Х"
 }
 
 local targetWords = {
+    -- ==================== 0. KATA KERJA PEMICU KONTEKS FISIK / ROMANTIS (ID) ====================
+    "bayang", "bayangkan", "kubayangkan", "membayangkan", "terbayang", "bayanganmu",
+    "pandang", "pandangi", "kupandang", " kupandangi", "memandang", "memandangi", "memandangmu",
+    "tatap", "kutatap", "menatap", "menatapmu", "tatapan", "tatapanmu",
+    "ingin", "inginkan", "kuinginkan", "menginginkan", "menginginkanmu",
+    "rasa", "rasakan", "kurasakan", "merasakan", "merasakanmu",
+    "nikmati", "kunikmati", "menikmati", "menikmatimu",
+    "damba", "dambakan", "kudambakan", "mendambakan",
+    "tunggu", "kutunggu", "menunggu", "menunggumu",
+    "jemput", "kujemput", "menjemput", "menjemputmu",
+    "bawa", "kubawa", "membawa", "membawamu",
+    "ajak", "kuajak", "mengajak", "mengajakmu",
+    "temani", "kutemani", "menemani", "menemanimu",
+    "dekati", "kudekati", "mendekati", "mendekatimu", "dekat", "mendekat",
+    "rebah", "merebahkan", "bersandar", "sandarkan", "basah", "membasahi",
+    "hangat", "kehangatan", "menghangatkan", "dingin", "kedinginan",
+    "indah", "keindahan", "cantik", "kecantikan", "manis", " elok",
+
     -- ==================== 1. MENTAL HEALTH, DEPRESI & LIRIK GALAU (EN & ID) ====================
     "depressed", "depressing", "depression", "depressive", "depresi", "stres", "stress",
     "stressed", "stressful", "anxious", "anxiety", "panic", "panik", "trauma", "traumatic",
@@ -58,7 +82,6 @@ local targetWords = {
     "regret", "regrets", "guilt", "guilty", "shame", "ashamed", "blame", "fault",
     "mistake", "failure", "fail", "failed", "pathetic", "weak", "fragile", "afraid",
     "scared", "fear", "terrified", "horrified", "dread",
-    -- Padanan Lirik Galau & Mental Health Indonesia
     "sedih", "kesedihan", "bersedih", "murung", "pilu", "lara", "duka", "berduka",
     "nestapa", "merana", "sengsara", "derita", "menderita", "penderitaan", "siksa",
     "tersiksa", "menyiksa", "pedih", "perih", "sakit", "menyakiti", "tersakiti",
@@ -66,46 +89,51 @@ local targetWords = {
     "hancur", "menghancurkan", "remuk", "berkeping", "patah", "rapuh", "rusak",
     "runtuh", "tumbang", "roboh", "lebur", "musnah", "binasa", "punah",
     "hampa", "kehampaan", "kosong", "kekosongan", "beku", "membeku", "mati rasa",
-    "kelam", "gelap", "kegelapan", "mendung", "kabut", "bayang", "bayangan",
-    "mimpi buruk", "petaka", "bencana", "kutukan", "terkutuk", "neraka", "jurang",
-    "sepi", "kesepian", "sunyi", "kesunyian", "hening", "sendiri", "sendirian",
-    "terasing", "tersisih", "terbuang", "terlupakan", "diabaikan", "ditinggalkan",
-    "meninggalkan", "pergi", "kepergian", "hilang", "kehilangan", "lenyap", "sirna",
-    "memudar", "memnudar", "pudar", "meredup", "redup", "remang", "tenggelam",
-    "menangis", "tangis", "tangisan", "airmata", "isak", "terisak", "ratap",
-    "meratap", "teriak", "berteriak", "jerit", "menjerit", "mengeluh", "keluh",
-    "lelah", "kelelahan", "letih", "lesu", "capek", "muak", "jenuh", "bosan",
-    "putus asa", "keputusasaan", "menyerah", "pasrah", "kalah", "gagal", "kegagalan",
-    "sia-sia", "percuma", "tak guna", "tak berguna", "beban", "sampah", "hina",
-    "benci", "membenci", "kebencian", "dendam", "marah", "kemarahan", "murka",
-    "kecewa", "kekecewaan", "mengecewakan", "sesal", "menyesal", "penyesalan",
-    "bersalah", "dosa", "berdosa", "malu", "takut", "ketakutan", "cemas", "kecemasan",
-    "gelisah", "khawatir", "ragu", "bimbang", "bingung", "kalut", "acau",
+    "kelam", "gelap", "kegelapan", "mendung", "kabut", "mimpi buruk", "petaka",
+    "bencana", "kutukan", "terkutuk", "neraka", "jurang", "sepi", "kesepian",
+    "sunyi", "kesunyian", "hening", "sendiri", "sendirian", "terasing", "tersisih",
+    "terbuang", "terlupakan", "diabaikan", "ditinggalkan", "meninggalkan", "pergi",
+    "kepergian", "hilang", "kehilangan", "lenyap", "sirna", "memudar", "memnudar",
+    "pudar", "meredup", "redup", "remang", "tenggelam", "menangis", "tangis",
+    "tangisan", "airmata", "isak", "terisak", "ratap", "meratap", "teriak",
+    "berteriak", "jerit", "menjerit", "mengeluh", "keluh", "lelah", "kelelahan",
+    "letih", "lesu", "capek", "muak", "jenuh", "bosan", "putus asa", "keputusasaan",
+    "menyerah", "pasrah", "kalah", "gagal", "kegagalan", "sia-sia", "percuma",
+    "beban", "sampah", "hina", "benci", "membenci", "kebencian", "dendam", "marah",
+    "kemarahan", "murka", "kecewa", "kekecewaan", "mengecewakan", "sesal", "menyesal",
+    "penyesalan", "bersalah", "dosa", "berdosa", "malu", "takut", "ketakutan",
+    "cemas", "kecemasan", "gelisah", "khawatir", "ragu", "bimbang", "bingung", "kalut",
 
     -- ==================== 2. ROMANSA, SENTUHAN & RAWAN FALSE POSITIVE (ID) ====================
     "memiliki", "memilikimu", "miliki", "milikku", "milikmu", "dirimu", "diriku",
-    "peluk", "memeluk", "memelukmu", "pelukan", "dekap", "mendekap", "dekapan",
-    "rangkul", "merangkul", "cium", "mencium", "ciuman", "kecup", "mengecup",
-    "belai", "membelai", "belaian", "sentuh", "menyentuh", "sentuhan", "raba",
-    "meraba", "elus", "mengelus", "pangku", "memangku", "pangkuan", "gandeng",
+    "peluk", "memeluk", "memelukmu", "kupeluk", "dipeluk", "pelukan", "pelukanmu",
+    "dekap", "mendekap", "kudekap", "dekapan", "rangkul", "merangkul", "kurangkul",
+    "cium", "mencium", "menciummu", "kucium", "dicium", "ciuman", "kecup", "mengecup",
+    "kukecup", "belai", "membelai", "kubelai", "belaian", "sentuh", "menyentuh",
+    "menyentuhmu", "kusentuh", "tersentuh", "sentuhan", "raba", "meraba", "kuraba",
+    "elus", "mengelus", "kuelus", "pangku", "memangku", "pangkuan", "gandeng",
     "pacar", "pacarku", "pacarmu", "pacaran", "berpacaran", "kekasih", "kekasihku",
-    "sayang", "sayangku", "menyayangi", "cinta", "cintaku", "cintamu", "mencintai",
-    "mencintaimu", "percintaan", "asmara", "kasmaran", "romantis", "mesra",
-    "bermesraan", "kencan", "berkencan", "jadian", "gebetan", "mantan", "mantanku",
-    "nikah", "menikah", "menikahimu", "pernikahan", "pengantin", "suami", "istri",
-    "jodoh", "rayu", "merayu", "rayuan", "goda", "menggoda", "godaan", "rindu",
-    "merindukan", "merindukanmu", "kangen", "hasrat", "gairah", "damba", "idaman",
+    "sayang", "sayangku", "menyayangi", "kusayang", "cinta", "cintaku", "cintamu",
+    "mencintai", "mencintaimu", "kucinta", "kucintai", "percintaan", "asmara",
+    "kasmaran", "romantis", "mesra", "bermesraan", "kencan", "berkencan", "jadian",
+    "gebetan", "mantan", "mantanku", "nikah", "menikah", "menikahimu", "pernikahan",
+    "pengantin", "suami", "istri", "jodoh", "rayu", "merayu", "rayuan", "goda",
+    "menggoda", "godaan", "rindu", "merindukan", "merindukanmu", "kurindu", "kangen",
+    "hasrat", "gairah", "idaman", "pujaan", "kasih", "kasihku", "kekasihmu",
 
     -- ==================== 3. ANATOMI, PAKAIAN & KAMAR (ID) ====================
-    "bibir", "bibirmu", "lidah", "leher", "lehermu", "dada", "dadamu", "dadaku",
-    "perut", "pinggang", "pinggul", "paha", "pahamu", "betis", "kulit", "kulitmu",
-    "tubuh", "tubuhmu", "tubuhku", "badan", "badanmu", "raga", "ragamu", "keringat",
-    "berkeringat", "peluh", "desah", "mendesah", "desahan", "napas", "napasmu",
-    "baju", "bajumu", "celana", "rok", "pakaian", "busana", "handuk", "daleman",
-    "kutang", "bh", "cd", "cangcut", "sempak", "kolor", "kamar", "kamarmu",
-    "ranjang", "kasur", "bantal", "selimut", "guling", "tidur", "meniduri",
-    "ketiduran", "mandi", "hotel", "penginapan", "losmen", "villa", "kos", "kosan",
-    "kontrakan", "toilet", "wc",
+    "bibir", "bibirmu", "bibirku", "lidah", "lidahmu", "leher", "lehermu", "dada",
+    "dadamu", "dadaku", "perut", "pinggang", "pinggangmu", "pinggul", "pinggulmu",
+    "paha", "pahamu", "betis", "kulit", "kulitmu", "tubuh", "tubuhmu", "tubuhku",
+    "badan", "badanmu", "badanku", "raga", "ragamu", "ragaku", "wajah", "wajahmu",
+    "kening", "keningmu", "pipi", "pipimu", "jari", "jarimu", "tangan", "tanganmu",
+    "bahu", "bahumu", "punggung", "punggungmu", "rambut", "rambutmu", "mata", "matamu",
+    "keringat", "berkeringat", "peluh", "desah", "mendesah", "desahan", "napas",
+    "napasmu", "nafas", "nafasmu", "baju", "bajumu", "celana", "rok", "pakaian",
+    "busana", "handuk", "daleman", "kutang", "bh", "cd", "cangcut", "sempak", "kolor",
+    "kamar", "kamarmu", "kamarku", "ranjang", "kasur", "bantal", "selimut", "guling",
+    "tidur", "meniduri", "ketiduran", "kutiduri", "mandi", "hotel", "penginapan",
+    "losmen", "villa", "kos", "kosan", "kontrakan", "toilet", "wc",
 
     -- ==================== 4. UMPATAN, HEWAN, KASAR & SLANG DAERAH (ID) ====================
     "anjing", "anjir", "anjay", "anjrit", "anjrot", "anying", "anjg", "ajg", "anj",
@@ -125,7 +153,7 @@ local targetWords = {
     "setan", "syaiton", "iblis", "dajjal", "jahanam", "laknat", "haram", "jadah",
     "kafir", "munafik", "najis",
     "jancok", "jancuk", "dancok", "diancok", "diancuk", "juancok", "cuk", "cok",
-    "coeg", "jangkrik", "jiangkrik", "matamu", "matane", "ndasmu", "ndase", "utekmu",
+    "coeg", "jangkrik", "jiangkrik", "matane", "ndasmu", "ndase", "utekmu",
     "lambemu", "lambene", "cangkemmu", "cangkeme", "raimu", "raine", "bathukmu",
     "gateli", "gatel", "tempik", "tempek", "turuk", "peli", "konthol", "dobol",
     "gendeng", "pekok", "kenthir", "gemblung", "semprul", "kampang", "kmpng",
@@ -252,7 +280,7 @@ local targetWords = {
     "wedding", "husband", "wife", "hubby", "wifey", "bride", "groom", "fiance",
     "divorce", "affair", "cheating", "cheat", "unfaithful", "jealous", "ex", "babe",
     "baby", "darling", "sweetheart", "honey", "sugar", "shawty", "shorty", "bae",
-    "cutie", "hottie", "gorgeous", "handsome", "pretty",
+    "cutie", "hottie", "gorgeous", "handsome", "pretty", "imagine", "imagining",
 
     -- ==================== 10. VIOLENCE, GORE, SELF-HARM & WEAPONS (EN) ====================
     "suicidal", "suicide", "kms", "kys", "selfharm", "cutting", "cutwrist", "overdose",
@@ -314,7 +342,6 @@ local targetWords = {
     "google", "phone", "number", "address", "email", "gmail", "password", "account", "age"
 }
 
--- Substring pendek yang paling agresif memicu Scunthorpe Problem & Mental Health Filter AI Roblox
 local aggressiveSubstrings = {
     "fuck", "fck", "fuk", "shit", "bitch", "cunt", "dick", "cock", "puss", "nigg",
     "fag", "slut", "whor", "rape", "pedo", "porn", "nude", "nud", "sex", "kill",
@@ -323,7 +350,9 @@ local aggressiveSubstrings = {
     "tetek", "toket", "lonte", "pelacur", "bokep", "mesum", "cabul", "perkosa",
     "bunuh", "anjing", "anjir", "bangsat", "brengsek", "bajingan", "goblok",
     "tolol", "jancok", "jancuk", "pantek", "kimak", "puki", "sange", "memi",
-    "muda", "remang", "milik", "derita", "siksa", "hancur"
+    "muda", "remang", "milik", "derita", "siksa", "hancur", "tubuh", "badan",
+    "bibir", "dada", "paha", "peluk", "cium", "sentuh", "bayang", "cinta",
+    "sayang", "kasih", "rindu", "tidur", "kamar", "ranjang"
 }
 
 local wordLookup = {}
@@ -331,32 +360,54 @@ for _, w in ipairs(targetWords) do
     wordLookup[w:lower()] = true
 end
 
+-- Pemecah kata Multi-Layer (Memecah setiap 2-3 huruf agar tidak bisa disatukan kembali oleh AI Roblox)
 local function obfuscateWord(word)
     if #word < 2 then return word end
-    local mode = FilterModule.BypassMode or 1
+    local mode = FilterModule.BypassMode or 3
 
     if mode == 1 then
-        local replacedCount = 0
-        local result = word:gsub(".", function(ch)
-            if homoglyphMap[ch] and replacedCount < 2 then
-                replacedCount += 1
-                return homoglyphMap[ch]
+        -- Mode 1: Homoglyph Vokal (Termasuk 'u') + Sisipan Zero-Width di tiap suku kata
+        local out = {}
+        local replaced = 0
+        for i = 1, #word do
+            local ch = word:sub(i, i)
+            if homoglyphMap[ch] and replaced < 3 then
+                ch = homoglyphMap[ch]
+                replaced += 1
             end
-            return ch
-        end)
-        if replacedCount > 0 then
-            return result
+            table.insert(out, ch)
+            if i < #word and i % 2 == 0 then
+                table.insert(out, ZWS)
+            end
         end
-        local mid = math.max(1, math.floor(#word / 2))
-        return word:sub(1, mid) .. "\226\128\141" .. word:sub(mid + 1)
+        return table.concat(out, "")
 
     elseif mode == 2 then
-        local mid = math.max(1, math.floor(#word / 2))
-        return word:sub(1, mid) .. "\226\128\141" .. word:sub(mid + 1)
+        -- Mode 2: Multi Zero-Width Joiner setiap 2 huruf
+        local out = {}
+        for i = 1, #word do
+            table.insert(out, word:sub(i, i))
+            if i < #word and i % 2 == 0 then
+                table.insert(out, (i % 4 == 0) and ZWS or ZWNJ)
+            end
+        end
+        return table.concat(out, "")
 
     else
-        local mid = math.max(1, math.floor(#word / 2))
-        return word:sub(1, mid) .. "·" .. word:sub(mid + 1)
+        -- Mode 3: Pemisah Suku Kata Visual ('·') + Homoglyph Vokal + Zero-Width
+        -- Contoh: "tubuhmu" -> "tυ·bυh·mυ" (Kebal strip simbol oleh filter Roblox)
+        local out = {}
+        for i = 1, #word do
+            local ch = word:sub(i, i)
+            if homoglyphMap[ch] then
+                ch = homoglyphMap[ch]
+            end
+            table.insert(out, ch)
+            if i < #word and i % 2 == 0 then
+                table.insert(out, ZWS .. "·")
+            end
+        end
+        return table.concat(out, "")
     end
 end
 
@@ -371,7 +422,8 @@ local function isStemMatched(stripped)
         end
     end
 
-    local prefixes = {"di", "ke", "se", "me", "mem", "men", "meng", "meny", "pe", "pem", "pen", "peng", "ber", "ter", "per", "un", "in", "dis", "re"}
+    -- Awalan termasuk "ku-" dan "kau-" (seperti kubayangkan, kupeluk, kucium)
+    local prefixes = {"ku", "kau", "di", "ke", "se", "me", "mem", "men", "meng", "meny", "pe", "pem", "pen", "peng", "ber", "ter", "per", "un", "in", "dis", "re"}
     for _, pre in ipairs(prefixes) do
         if #stripped > #pre + 2 and stripped:sub(1, #pre) == pre then
             local stem = stripped:sub(#pre + 1)
@@ -430,7 +482,7 @@ function FilterModule.Sanitize(text, enabled)
         return word
     end)
 
-    cleaned = cleaned:gsub("(%d)(%d)", "%1\226\128\141%2"):gsub("(%d)(%d)", "%1\226\128\141%2")
+    cleaned = cleaned:gsub("(%d)(%d)", "%1" .. ZWS .. "%2"):gsub("(%d)(%d)", "%1" .. ZWS .. "%2")
     return cleaned
 end
 
