@@ -1,109 +1,202 @@
 -- =================================================================================
--- KOPLINGTIFY LITE v2.5 - TIER-1 ANTI-STRIP BYPASS FILTER (KOPLINGTIFY_FILTER.luau)
+-- KOPLINGTIFY LITE v2.5 - ANTI-DEACCENT & CONTEXT BREAKER (KOPLINGTIFY_FILTER.luau)
 -- =================================================================================
 local FilterModule = {}
 
--- Pilihan Mode Bypass:
--- 1 = Latin-1 Accent Vowel (Resmi didukung chat Eropa Roblox: "fùck", "shìt", "tùbuhmu", "jémbut")
--- 2 = Visual Leetspeak / Consonant Mask (Murni A-Z: "fvck", "shlt", "bItch", "jexmbut")
--- 3 = Spasi Suku Kata Mikro (Memecah kata Tier-1 menjadi "fu ck", "je mbut")
-FilterModule.BypassMode = 2
+-- Pilihan Mode Bypass (100% Huruf A-Z Murni, kebal De-Accenter & Punctuation Stripper Roblox):
+-- 1 = Double-Vowel / Soft-Insert (Contoh: "tubuuhmu", "tiduur", "kubayangkaan", "fuvck") -> PALING AMAN & JELAS
+-- 2 = Visual Leetspeak (Contoh: "tvbvhmu", "tIdvr", "fvck", "shIt")
+-- 3 = Syllable Space Split (Contoh: "tu buhmu", "ti dur", "ku bayangkan", "fu ck")
+FilterModule.BypassMode = 1
 
--- Peta Vokal Aksentuasi Eropa Barat (Latin-1 Supplement - Legal di TextChatService Roblox)
-local accentVowelMap = {
-    ["a"] = "à",
-    ["e"] = "é",
-    ["i"] = "ì",
-    ["o"] = "ò",
-    ["u"] = "ù",
-    ["A"] = "À",
-    ["E"] = "É",
-    ["I"] = "Ì",
-    ["O"] = "Ò",
-    ["U"] = "Ù"
+-- Kamus Spesifik Kata Tier-1 & Kata Pemicu Konteks (Mode 1, Mode 2, Mode 3)
+local directBypassMap = {
+    -- Kata Pemicu Konteks Lirik Indonesia (Yang bikin kalimat kena sensor)
+    ["bayang"]        = {"bayangin", "b4yang", "ba yang"},
+    ["bayangkan"]     = {"bayangkaan", "b4yangkan", "ba yangkan"},
+    ["kubayangkan"]   = {"kubayangkaan", "kub4yangkan", "ku bayangkan"},
+    ["membayangkan"]  = {"membayangkaan", "memb4yangkan", "mem bayangkan"},
+    ["terbayang"]     = {"terbayaang", "terb4yang", "ter bayang"},
+    ["bayanganmu"]    = {"bayangaanmu", "b4yanganmu", "ba yanganmu"},
+    ["tubuh"]         = {"tubuuh", "tvbuh", "tu buh"},
+    ["tubuhmu"]       = {"tubuuhmu", "tvbuhmu", "tu buhmu"},
+    ["tubuhku"]       = {"tubuuhku", "tvbuhku", "tu buhku"},
+    ["badan"]         = {"badaan", "b4dan", "ba dan"},
+    ["badanmu"]       = {"badaanmu", "b4danmu", "ba danmu"},
+    ["badanku"]       = {"badaanku", "b4danku", "ba danku"},
+    ["raga"]          = {"ragaa", "r4ga", "ra ga"},
+    ["ragamu"]        = {"ragaamu", "r4gamu", "ra gamu"},
+    ["tidur"]         = {"tiduur", "tIdur", "ti dur"},
+    ["tidurlah"]      = {"tiduurlah", "tIdurlah", "ti durlah"},
+    ["meniduri"]      = {"meniduuri", "menIduri", "me niduri"},
+    ["kutiduri"]      = {"kutiduuri", "kutIduri", "ku tiduri"},
+    ["ketiduran"]     = {"ketiduuran", "ketIduran", "ke tiduran"},
+    ["sekasur"]       = {"sekaasur", "sek4sur", "se kasur"},
+    ["seranjang"]     = {"seranjaang", "ser4njang", "se ranjang"},
+    ["ranjang"]       = {"ranjaang", "r4njang", "ran jang"},
+    ["kasur"]         = {"kasuur", "k4sur", "ka sur"},
+    ["kamar"]         = {"kamaar", "k4mar", "ka mar"},
+    ["kamarmu"]       = {"kamaarmu", "k4marmu", "ka marmu"},
+    ["kamarku"]       = {"kamaarku", "k4marku", "ka marku"},
+    ["peluk"]         = {"peluuk", "p3luk", "pe luk"},
+    ["memeluk"]       = {"memeluuk", "mem3luk", "me meluk"},
+    ["memelukmu"]     = {"memeluukmu", "mem3lukmu", "me melukmu"},
+    ["kupeluk"]       = {"kupeluuk", "kup3luk", "ku peluk"},
+    ["pelukan"]       = {"peluukan", "p3lukan", "pe lukan"},
+    ["pelukanmu"]     = {"peluukanmu", "p3lukanmu", "pe lukanmu"},
+    ["cium"]          = {"ciuum", "cIum", "ci um"},
+    ["mencium"]       = {"menciuum", "mencIum", "men cium"},
+    ["menciummu"]     = {"menciuummu", "mencIummu", "men ciummu"},
+    ["kucium"]        = {"kuciuum", "kucIum", "ku cium"},
+    ["ciuman"]        = {"ciuuman", "cIuman", "ci uman"},
+    ["kecup"]         = {"kecuup", "k3cup", "ke cup"},
+    ["mengecup"]      = {"mengecuup", "meng3cup", "me ngecup"},
+    ["sentuh"]        = {"sentuuh", "s3ntuh", "sen tuh"},
+    ["menyentuh"]     = {"menyentuuh", "meny3ntuh", "me nyentuh"},
+    ["menyentuhmu"]   = {"menyentuuhmu", "meny3ntuhmu", "me nyentuhmu"},
+    ["kusentuh"]      = {"kusentuuh", "kus3ntuh", "ku sentuh"},
+    ["sentuhan"]      = {"sentuuhan", "s3ntuhan", "sen tuhan"},
+    ["belai"]         = {"belaai", "b3lai", "be lai"},
+    ["membelai"]      = {"membelaai", "memb3lai", "mem belai"},
+    ["raba"]          = {"rabaa", "r4ba", "ra ba"},
+    ["meraba"]        = {"merabaa", "mer4ba", "me raba"},
+    ["pangku"]        = {"pangkuu", "p4ngku", "pang ku"},
+    ["memangku"]      = {"memangkuu", "mem4ngku", "me mangku"},
+    ["bibir"]         = {"bibiir", "bIbir", "bi bir"},
+    ["bibirmu"]       = {"bibiirmu", "bIbirmu", "bi birmu"},
+    ["bibirku"]       = {"bibiirku", "bIbirku", "bi birku"},
+    ["lidah"]         = {"lidaah", "lIdah", "li dah"},
+    ["leher"]         = {"leheer", "l3her", "le her"},
+    ["lehermu"]       = {"leheermu", "l3hermu", "le hermu"},
+    ["dada"]          = {"dadaa", "d4da", "da da"},
+    ["dadamu"]        = {"dadaamu", "d4damu", "da damu"},
+    ["dadaku"]        = {"dadaaku", "d4daku", "da daku"},
+    ["paha"]          = {"pahaa", "p4ha", "pa ha"},
+    ["pahamu"]        = {"pahaamu", "p4hamu", "pa hamu"},
+    ["kulit"]         = {"kuliit", "kulIt", "ku lit"},
+    ["kulitmu"]       = {"kuliitmu", "kulItmu", "ku litmu"},
+    ["desah"]         = {"desaah", "d3sah", "de sah"},
+    ["mendesah"]      = {"mendesaah", "mend3sah", "men desah"},
+    ["desahan"]       = {"desaahan", "d3sahan", "de sahan"},
+    ["keringat"]      = {"keringaat", "kerIngat", "ke ringat"},
+    ["bercinta"]      = {"berciinta", "bercInta", "ber cinta"},
+    ["cinta"]         = {"ciinta", "cInta", "cin ta"},
+    ["cintaku"]       = {"ciintaku", "cIntaku", "cin taku"},
+    ["cintamu"]       = {"ciintamu", "cIntamu", "cin tamu"},
+    ["mencintai"]     = {"menciintai", "mencIntai", "men cintai"},
+    ["mencintaimu"]   = {"menciintaimu", "mencIntaimu", "men cintaimu"},
+    ["sayang"]        = {"sayaang", "s4yang", "sa yang"},
+    ["sayangku"]      = {"sayaangku", "s4yangku", "sa yangku"},
+    ["kekasih"]       = {"kekaasih", "kek4sih", "ke kasih"},
+    ["kekasihku"]     = {"kekaasihku", "kek4sihku", "ke kasihku"},
+    ["pacar"]         = {"pacaar", "p4car", "pa car"},
+    ["pacarku"]       = {"pacaarku", "p4carku", "pa carku"},
+    ["pacarmu"]       = {"pacaarmu", "p4carmu", "pa carmu"},
+    ["memiliki"]      = {"memiliiki", "memIlIki", "me miliki"},
+    ["memilikimu"]    = {"memiliikimu", "memIlIkimu", "me milikimu"},
+    ["milikku"]       = {"miliikku", "mIlIkku", "mi likku"},
+    ["milikmu"]       = {"miliikmu", "mIlIkmu", "mi likmu"},
+    ["dirimu"]        = {"diriimu", "dIrimu", "di rimu"},
+    ["diriku"]        = {"diriiku", "dIriku", "di riku"},
+    ["memudar"]       = {"memudaar", "memvdar", "me mudar"},
+    ["memnudar"]      = {"memnudaar", "memnvdar", "mem nudar"},
+    ["remang"]        = {"remaang", "r3mang", "re mang"},
+    ["sunyi"]         = {"sunyii", "svnyi", "su nyi"},
+    ["hampa"]         = {"hampaa", "h4mpa", "ham pa"},
+
+    -- Kata Tier-1 Inggris (Anti-Punctuation Stripper)
+    ["fuck"]          = {"fuvck", "fvck", "fu ck"},
+    ["fucks"]         = {"fuvcks", "fvcks", "fu cks"},
+    ["fucking"]       = {"fuvcking", "fvcking", "fu cking"},
+    ["fuckin"]        = {"fuvckin", "fvckin", "fu ckin"},
+    ["fucked"]        = {"fuvcked", "fvcked", "fu cked"},
+    ["fucker"]        = {"fuvcker", "fvcker", "fu cker"},
+    ["fuckers"]       = {"fuvckers", "fvckers", "fu ckers"},
+    ["motherfucker"]  = {"motherfuvcker", "motherfvcker", "mother fu cker"},
+    ["motherfucking"] = {"motherfuvcking", "motherfvcking", "mother fu cking"},
+    ["shit"]          = {"shiit", "shIt", "sh it"},
+    ["shits"]         = {"shiits", "shIts", "sh its"},
+    ["shitting"]      = {"shiitting", "shItting", "sh itting"},
+    ["shitty"]        = {"shiitty", "shItty", "sh itty"},
+    ["bullshit"]      = {"bullshiit", "bullshIt", "bull sh it"},
+    ["bitch"]         = {"biitch", "bItch", "bi tch"},
+    ["bitches"]       = {"biitches", "bItches", "bi tches"},
+    ["bitching"]      = {"biitching", "bItching", "bi tching"},
+    ["cunt"]          = {"cuvnt", "cvnt", "cu nt"},
+    ["dick"]          = {"diick", "dIck", "di ck"},
+    ["dicks"]         = {"diicks", "dIcks", "di cks"},
+    ["cock"]          = {"coock", "c0ck", "co ck"},
+    ["pussy"]         = {"puvssy", "pvssy", "pu ssy"},
+    ["nigga"]         = {"niigga", "nIgga", "ni gga"},
+    ["niggas"]        = {"niiggas", "nIggas", "ni ggas"},
+    ["nigger"]        = {"niigger", "nIgger", "ni gger"},
+    ["slut"]          = {"sluut", "sIut", "sl ut"},
+    ["whore"]         = {"whoore", "wh0re", "wh ore"},
+    ["sex"]           = {"seex", "s3x", "s ex"},
+    ["sexy"]          = {"seexy", "s3xy", "se xy"},
+    ["porn"]          = {"poorn", "p0rn", "po rn"},
+    ["nude"]          = {"nuude", "nvde", "nu de"},
+    ["nudes"]         = {"nuudes", "nvdes", "nu des"},
+    ["rape"]          = {"raape", "r4pe", "ra pe"},
+    ["kill"]          = {"kiill", "kIll", "ki ll"},
+    ["killed"]        = {"kiilled", "kIlled", "ki lled"},
+    ["killing"]       = {"kiilling", "kIlling", "ki lling"},
+    ["die"]           = {"diie", "dIe", "d ie"},
+    ["dying"]         = {"dyiing", "dyIng", "dy ing"},
+    ["dead"]          = {"deaad", "d3ad", "de ad"},
+    ["suicide"]       = {"suiicide", "suIcIde", "sui cide"},
+    ["suicidal"]      = {"suiicidal", "suIcIdal", "sui cidal"},
+    ["depressed"]     = {"depreessed", "depr3ssed", "de pressed"},
+    ["depression"]    = {"depreession", "depr3ssion", "de pression"},
+
+    -- Kata Tier-1 Kasar & Vulgar Indonesia
+    ["kontol"]        = {"kontool", "k0ntol", "kon tol"},
+    ["memek"]         = {"memeek", "m3mek", "me mek"},
+    ["jembut"]        = {"jembuut", "j3mbut", "jem but"},
+    ["ngentot"]       = {"ngentoot", "ng3ntot", "ngen tot"},
+    ["ngewe"]         = {"ngeewe", "ng3we", "nge we"},
+    ["pepek"]         = {"pepeek", "p3pek", "pe pek"},
+    ["tetek"]         = {"teteek", "t3tek", "te tek"},
+    ["toket"]         = {"tokeet", "t0ket", "to ket"},
+    ["lonte"]         = {"lontee", "l0nte", "lon te"},
+    ["anjing"]        = {"anjiing", "anjIng", "an jing"},
+    ["anjir"]         = {"anjiir", "anjIr", "an jir"},
+    ["bangsat"]       = {"bangsaat", "b4ngsat", "bang sat"},
+    ["brengsek"]      = {"brengseek", "br3ngsek", "breng sek"},
+    ["bajingan"]      = {"bajiingan", "b4jingan", "ba jingan"},
+    ["goblok"]        = {"goblook", "g0blok", "gob lok"},
+    ["tolol"]         = {"tolool", "t0lol", "to lol"},
+    ["jancok"]        = {"jancook", "j4ncok", "jan cok"},
+    ["jancuk"]        = {"jancuuk", "j4ncuk", "jan cuk"},
+    ["pantek"]        = {"panteek", "p4ntek", "pan tek"},
+    ["puki"]          = {"pukii", "pukI", "pu ki"},
+    ["pukimak"]       = {"pukiimak", "pukImak", "puki mak"},
+    ["sange"]         = {"sangee", "s4nge", "sa nge"},
+    ["bokep"]         = {"bokeep", "b0kep", "bo kep"},
+    ["bunuh"]         = {"bunuuh", "bvnuh", "bu nuh"},
+    ["membunuh"]      = {"membunuuh", "membvnuh", "mem bunuh"},
+    ["mati"]          = {"matii", "m4ti", "ma ti"}
 }
 
--- Kamus Bypass Spesifik untuk Kata Tier-1 (Karena tanda titik/petik pasti dihapus oleh Roblox)
-local tier1DirectBypass = {
-    -- Mode 1 (Accent), Mode 2 (Leet ASCII), Mode 3 (Split)
-    ["fuck"]         = {"fùck", "fvck", "fu ck"},
-    ["fucks"]        = {"fùcks", "fvcks", "fu cks"},
-    ["fucking"]      = {"fùcking", "fvcking", "fu cking"},
-    ["fuckin"]       = {"fùckin", "fvckin", "fu ckin"},
-    ["fucked"]       = {"fùcked", "fvcked", "fu cked"},
-    ["fucker"]       = {"fùcker", "fvcker", "fu cker"},
-    ["fuckers"]      = {"fùckers", "fvckers", "fu ckers"},
-    ["motherfucker"] = {"mòtherfùcker", "motherfvcker", "mother fu cker"},
-    ["motherfucking"]= {"mòtherfùcking", "motherfvcking", "mother fu cking"},
-    ["shit"]         = {"shìt", "shlt", "sh it"},
-    ["shits"]        = {"shìts", "shlts", "sh its"},
-    ["shitting"]     = {"shìtting", "shltting", "sh itting"},
-    ["shitty"]       = {"shìtty", "shltty", "sh itty"},
-    ["bullshit"]     = {"bùllshìt", "bullshlt", "bull sh it"},
-    ["bitch"]        = {"bìtch", "bItch", "bi tch"},
-    ["bitches"]      = {"bìtches", "bItches", "bi tches"},
-    ["bitching"]     = {"bìtching", "bItching", "bi tching"},
-    ["cunt"]         = {"cùnt", "cvnt", "cu nt"},
-    ["dick"]         = {"dìck", "dIck", "di ck"},
-    ["dicks"]        = {"dìcks", "dIcks", "di cks"},
-    ["cock"]         = {"còck", "c0ck", "co ck"},
-    ["pussy"]        = {"pùssy", "pvssy", "pu ssy"},
-    ["nigga"]        = {"nìgga", "nIgga", "ni gga"},
-    ["niggas"]       = {"nìggas", "nIggas", "ni ggas"},
-    ["nigger"]       = {"nìgger", "nIgger", "ni gger"},
-    ["slut"]         = {"slùt", "sIut", "sl ut"},
-    ["whore"]        = {"whòre", "wh0re", "wh ore"},
-    ["sex"]          = {"séx", "s3x", "s ex"},
-    ["sexy"]         = {"séxy", "s3xy", "se xy"},
-    ["porn"]         = {"pòrn", "p0rn", "po rn"},
-    ["nude"]         = {"nùde", "nvde", "nu de"},
-    ["nudes"]        = {"nùdes", "nvdes", "nu des"},
-    ["rape"]         = {"ràpe", "r4pe", "ra pe"},
-    ["kill"]         = {"kìll", "kIll", "ki ll"},
-    ["suicide"]      = {"suìcìde", "suIcIde", "sui cide"},
-    ["suicidal"]     = {"suìcìdal", "suIcIdal", "sui cidal"},
-    ["depressed"]    = {"dépréssed", "depr3ssed", "de pressed"},
-    ["depression"]   = {"dépréssion", "depr3ssion", "de pression"},
-    -- Tier-1 Indonesia
-    ["kontol"]       = {"kòntol", "k0ntol", "kon tol"},
-    ["memek"]        = {"mémék", "m3mek", "me mek"},
-    ["jembut"]       = {"jémbùt", "j3mbut", "jem but"},
-    ["ngentot"]      = {"ngéntòt", "ng3ntot", "ngen tot"},
-    ["ngewe"]        = {"ngéwé", "ng3we", "nge we"},
-    ["pepek"]        = {"pépék", "p3pek", "pe pek"},
-    ["tetek"]        = {"téték", "t3tek", "te tek"},
-    ["toket"]        = {"tòkét", "t0ket", "to ket"},
-    ["lonte"]        = {"lònté", "l0nte", "lon te"},
-    ["anjing"]       = {"ànjìng", "anjIng", "an jing"},
-    ["anjir"]        = {"ànjìr", "anjIr", "an jir"},
-    ["bangsat"]      = {"bàngsat", "b4ngsat", "bang sat"},
-    ["goblok"]       = {"gòblòk", "g0blok", "gob lok"},
-    ["tolol"]        = {"tòlòl", "t0lol", "to lol"},
-    ["jancok"]       = {"jàncòk", "j4ncok", "jan cok"},
-    ["jancuk"]       = {"jàncùk", "j4ncuk", "jan cuk"},
-    ["pantek"]       = {"pànték", "p4ntek", "pan tek"},
-    ["puki"]         = {"pùkì", "pukI", "pu ki"},
-    ["pukimak"]      = {"pùkìmàk", "pukImak", "puki mak"},
-    ["tubuh"]        = {"tùbùh", "tvbuh", "tu buh"},
-    ["tubuhmu"]      = {"tùbùhmu", "tvbuhmu", "tu buhmu"},
-    ["tubuhku"]      = {"tùbùhku", "tvbuhku", "tu buhku"},
-    ["memudar"]      = {"mémùdar", "memvdar", "me mudar"},
-    ["memnudar"]     = {"mémnùdar", "memnvdar", "mem nudar"}
-}
-
--- Daftar kata sensitif yang perlu di-bypass (Kata sehari-hari yang aman TIDAK dimasukkan)
+-- Daftar kata sensitif umum lainnya
 local strictBadWords = {
-    "tubuh", "tubuhmu", "tubuhku", "badanmu", "ragamu", "bibirmu", "bibirku",
-    "lidah", "lidahmu", "lehermu", "dada", "dadamu", "dadaku", "paha", "pahamu",
-    "pinggul", "pinggulmu", "kulitmu", "keringat", "desah", "mendesah", "desahan",
+    "bayang", "bayangkan", "kubayangkan", "membayangkan", "terbayang",
+    "tubuh", "tubuhmu", "tubuhku", "badan", "badanmu", "badanku", "raga", "ragamu",
+    "tidur", "tidurlah", "meniduri", "kutiduri", "ketiduran", "ranjang", "kasur",
+    "kamar", "kamarmu", "kamarku", "selimut", "bantal",
+    "bibir", "bibirmu", "bibirku", "lidah", "lidahmu", "leher", "lehermu",
+    "dada", "dadamu", "dadaku", "paha", "pahamu", "pinggul", "pinggulmu",
+    "kulit", "kulitmu", "keringat", "desah", "mendesah", "desahan",
     "peluk", "memeluk", "memelukmu", "kupeluk", "pelukan", "pelukanmu",
+    "dekap", "mendekap", "dekapan", "rangkul", "merangkul",
     "cium", "mencium", "menciummu", "kucium", "ciuman", "kecup", "mengecup",
     "sentuh", "menyentuh", "menyentuhmu", "kusentuh", "sentuhan",
     "belai", "membelai", "raba", "meraba", "pangku", "memangku",
-    "bercinta", "meniduri", "kutiduri", "ranjang", "pacar", "pacarku", "pacarmu",
-    "pacaran", "kekasih", "kekasihku", "kekasihmu", "nikah", "menikah", "menikahimu",
-    "suami", "istri", "selingkuh", "pelakor", "telanjang", "bugil", "seksi",
-    "montok", "bohay", "semok", "bahenol", "kutang", "bh", "cangcut", "sempak",
+    "bercinta", "cinta", "cintaku", "cintamu", "mencintai", "mencintaimu",
+    "pacar", "pacarku", "pacarmu", "pacaran", "kekasih", "kekasihku", "kekasihmu",
+    "nikah", "menikah", "menikahimu", "suami", "istri", "selingkuh", "pelakor",
+    "telanjang", "bugil", "seksi", "montok", "bohay", "semok", "bahenol",
+    "kutang", "bh", "cangcut", "sempak", "kolor", "daleman",
 
     "anjing", "anjir", "anjrit", "anjrot", "anying", "anjg", "ajg", "njir", "njrit",
     "asu", "asw", "kirik", "babi", "celeng", "bagong", "monyet", "kunyuk", "kampret",
@@ -127,7 +220,7 @@ local strictBadWords = {
     "seks", "seksual", "bokep", "mesum", "cabul", "perkosa", "memperkosa", "pedofil",
 
     "bunuh", "membunuh", "pembunuh", "bantai", "membantai", "cekik", "tikam",
-    "tusuk", "bacok", "penggal", "mutilasi", "mayat", "jenazah",
+    "tusuk", "bacok", "penggal", "mutilasi", "mayat", "jenazah", "mati", "kematian",
     "mabuk", "mabok", "miras", "alkohol", "tuak", "ciu", "amer", "narkoba",
     "ganja", "sabu", "ekstasi", "heroin", "kokain", "overdosis", "sakau", "judi", "judol",
     "depressed", "depressing", "depression", "depresi", "anxious", "anxiety",
@@ -159,7 +252,7 @@ local strictBadWords = {
     "undress", "underwear", "bra", "panties", "bikini", "bed", "bedroom", "boyfriend",
     "girlfriend", "lover", "dating", "marry", "husband", "wife", "daddy", "mommy",
     "discord", "tiktok", "instagram", "whatsapp", "telegram", "youtube", "twitter",
-    "facebook", "snapchat", "tinder", "onlyfans", "spotify"
+    "facebook", "snapchat", "tinder", "onlyfans", "spotify", "sleep", "sleeping"
 }
 
 local hardSubstrings = {
@@ -168,7 +261,7 @@ local hardSubstrings = {
     "kontol", "kntl", "memek", "pepek", "jembut", "jmbt", "ngentot", "ngewe",
     "tetek", "toket", "lonte", "pelacur", "bokep", "mesum", "cabul", "perkosa",
     "anjing", "anjir", "bangsat", "brengsek", "bajingan", "goblok", "tolol",
-    "jancok", "jancuk", "pantek", "kimak", "puki", "sange"
+    "jancok", "jancuk", "pantek", "kimak", "puki", "sange", "tubuh", "tidur", "bayang"
 }
 
 local wordLookup = {}
@@ -186,36 +279,40 @@ local function matchCase(original, replacement)
     return replacement
 end
 
+-- Fungsi Pure ASCII Double-Vowel / Soft-Insert (Tidak bisa dihapus oleh De-Accenter & Punctuation Stripper Roblox)
+local function doubleLastVowel(word)
+    -- Cari huruf vokal terakhir di dalam kata lalu gandakan (misal: tidur -> tiduur, tubuh -> tubuuh)
+    for i = #word, 1, -1 do
+        local ch = word:sub(i, i)
+        if ch:match("[aiueoAIUEO]") then
+            return word:sub(1, i) .. ch:lower() .. word:sub(i + 1)
+        end
+    end
+    -- Jika kata tidak punya vokal (misal singkatan kntl, bgst), sisipkan huruf 'e' atau 'u'
+    local mid = math.max(1, math.floor(#word / 2))
+    return word:sub(1, mid) .. "u" .. word:sub(mid + 1)
+end
+
 local function bypassWord(word)
     if #word < 2 then return word end
     local lower = word:lower()
     local mode = math.clamp(tonumber(FilterModule.BypassMode) or 1, 1, 3)
 
-    -- 1. Jika kata ada di kamus Tier-1 Direct Bypass (seperti fuck, shit, bitch, jembut, tubuhmu)
-    if tier1DirectBypass[lower] then
-        return matchCase(word, tier1DirectBypass[lower][mode])
+    -- 1. Cek kamus Direct Bypass
+    if directBypassMap[lower] then
+        return matchCase(word, directBypassMap[lower][mode])
     end
 
-    -- 2. Jika kata mengandung "fuck" di dalamnya (seperti motherfucker, clusterfuck)
+    -- 2. Jika kata mengandung substring "fuck"
     if lower:find("fuck", 1, true) then
-        local rep = (mode == 1 and "fùck") or (mode == 2 and "fvck") or "fu ck"
+        local rep = (mode == 1 and "fuvck") or (mode == 2 and "fvck") or "fu ck"
         return word:gsub("[fF][uU][cC][kK]", function(m) return matchCase(m, rep) end)
     end
 
-    -- 3. Untuk kata sensitif lainnya sesuai Mode
+    -- 3. Jika Mode 1 (Double-Vowel ASCII: "peluk" -> "peluuk", "meraba" -> "merabaa")
     if mode == 1 then
-        -- Ganti vokal pertama/kedua dengan huruf vokal beraksen Eropa Barat (ù, ì, é, ò, à)
-        local replaced = false
-        local res = word:gsub("([aeiouAEIOU])", function(v)
-            if not replaced and accentVowelMap[v] then
-                replaced = true
-                return accentVowelMap[v]
-            end
-            return v
-        end)
-        if replaced then return res end
+        return doubleLastVowel(word)
     elseif mode == 2 then
-        -- Ganti 1 vokal dengan karakter visual ASCII (u->v, i->I, e->3, o->0, a->4)
         local leet = {["u"]="v", ["i"]="I", ["l"]="I", ["e"]="3", ["o"]="0", ["a"]="4"}
         local replaced = false
         local res = word:gsub("([uileoal])", function(c)
@@ -226,22 +323,36 @@ local function bypassWord(word)
             return c
         end)
         if replaced then return res end
+        return doubleLastVowel(word)
+    else
+        local mid = math.max(2, math.floor(#word / 2))
+        return word:sub(1, mid) .. " " .. word:sub(mid + 1)
     end
-
-    -- Mode 3 atau Fallback: Pisahkan suku kata tengah dengan spasi
-    local mid = math.max(2, math.floor(#word / 2))
-    return word:sub(1, mid) .. " " .. word:sub(mid + 1)
 end
 
 local function isBadWord(word)
     local lowerWord = word:lower():gsub("'", "")
-    if tier1DirectBypass[lowerWord] or wordLookup[lowerWord] then return true end
+    if directBypassMap[lowerWord] or wordLookup[lowerWord] then return true end
 
-    local suffixes = {"nya", "mu", "ku", "lah", "kan", "ing", "ed", "es", "s"}
+    local suffixes = {"nya", "mu", "ku", "lah", "kan", "an", "in", "ing", "ed", "es", "s"}
     for _, suf in ipairs(suffixes) do
         if #lowerWord > #suf + 2 and lowerWord:sub(-#suf) == suf then
             local stem = lowerWord:sub(1, #lowerWord - #suf)
-            if tier1DirectBypass[stem] or wordLookup[stem] then return true end
+            if directBypassMap[stem] or wordLookup[stem] then return true end
+        end
+    end
+
+    local prefixes = {"ku", "kau", "di", "me", "mem", "men", "meng", "meny", "ter", "ber", "se"}
+    for _, pre in ipairs(prefixes) do
+        if #lowerWord > #pre + 2 and lowerWord:sub(1, #pre) == pre then
+            local stem = lowerWord:sub(#pre + 1)
+            if directBypassMap[stem] or wordLookup[stem] then return true end
+            for _, suf in ipairs(suffixes) do
+                if #stem > #suf + 2 and stem:sub(-#suf) == suf then
+                    local inner = stem:sub(1, #stem - #suf)
+                    if directBypassMap[inner] or wordLookup[inner] then return true end
+                end
+            end
         end
     end
 
