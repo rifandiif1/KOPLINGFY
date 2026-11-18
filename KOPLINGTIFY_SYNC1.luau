@@ -156,8 +156,7 @@ local makeButton = UI.MakeButton
 local makeHoldable = UI.MakeHoldable
 local enableDrag = UI.EnableDrag
 
--- ======================== SMART LYRIC PACING BAR (INJEKSI OTOMATIS) ========================
--- 1. Pacing Bar di dalam Kartu Lirik Utama (Tepat di bawah kalimat aktif)
+-- ======================== SMART LYRIC PACING BAR ========================
 local cardPacingBg = Instance.new("Frame")
 cardPacingBg.Name = "CardPacingBg"
 cardPacingBg.Position = UDim2.new(0, 14, 0, 65)
@@ -181,7 +180,6 @@ pacingGrad.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 215, 75))
 })
 
--- 2. Pacing Bar di dalam Subtitle HUD Layar
 local subPacingBg = Instance.new("Frame")
 subPacingBg.Name = "SubPacingBg"
 subPacingBg.Position = UDim2.new(0.2, 0, 0, 36)
@@ -200,7 +198,7 @@ subPacingFill.BorderSizePixel = 0
 subPacingFill.Parent = subPacingBg
 Instance.new("UICorner", subPacingFill).CornerRadius = UDim.new(1, 0)
 
--- ======================== STATE UTAMA DARI AUTO-SAVE ========================
+-- ======================== STATE UTAMA ========================
 local cache, transCache = {}, {}
 local activeSound, activeSoundId, activeItem = nil, nil, nil
 local lyrics = {}
@@ -252,7 +250,7 @@ end
 
 local function httpGet(url)
     local ok, res = pcall(function() return game:HttpGet(url) end)
-    return (ok and type(res) == "string") and res or nil
+    return (ok and type(res) == "string" and res ~= "") and res or nil
 end
 
 local function formatTime(seconds)
@@ -303,7 +301,6 @@ local function applySubtitleStyle()
     subTransText.Visible = translateEnabled
 end
 
--- Terapkan tampilan tombol awal dari hasil Load Config
 subtitleFrame.Visible = isSubtitleEnabled
 subToggleBtn.BackgroundColor3 = isSubtitleEnabled and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(36, 42, 52)
 subBgBtn.Text = "🎬 Kotak Cinema: " .. (subCinemaBg and "ON" or "OFF")
@@ -462,6 +459,7 @@ closeBtn.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
+-- ======================== MESIN TRANSLATE & ROMANIZATION ANTI-GAGAL ========================
 local function normalizeRomanizedASCII(str)
     if not str or str == "" then return "" end
     local diacritics = {
@@ -481,70 +479,167 @@ local function normalizeRomanizedASCII(str)
     return str
 end
 
+local function hasNonLatinScript(str)
+    if not str then return false end
+    for i = 1, #str do
+        if string.byte(str, i) > 127 then
+            return true
+        end
+    end
+    return false
+end
+
 local function fetchTranslateAndRoman(text)
     if not text or text == "" or text == "♪" then return "", "" end
-    local key = string.lower(text)
-    if transCache[key] then
+    local cleanInput = text:gsub("^%s+", ""):gsub("%s+$", "")
+    local key = string.lower(cleanInput)
+    if transCache[key] and (transCache[key].Trans ~= "" or transCache[key].Done) then
         return transCache[key].Trans, transCache[key].Rom
     end
 
-    local url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=id&dt=t&dt=rm&q=" .. HttpService:UrlEncode(text)
-    local body = httpGet(url)
-    if not body then return "", "" end
+    local encoded = HttpService:UrlEncode(cleanInput)
+    local urls = {
+        "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=id&dt=t&dt=rm&q=" .. encoded,
+        "https://clients5.google.com/translate_a/single?client=dict-chrome-ex&sl=auto&tl=id&dt=t&dt=rm&q=" .. encoded
+    }
 
-    local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
-    if ok and type(data) == "table" and type(data[1]) == "table" then
-        local transParts, romParts = {}, {}
-        for _, seg in ipairs(data[1]) do
-            if type(seg) == "table" then
-                if type(seg[1]) == "string" then
-                    table.insert(transParts, seg[1])
+    for _, url in ipairs(urls) do
+        local body = httpGet(url)
+        if body then
+            local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+            if ok and type(data) == "table" then
+                local srcLang = type(data[3]) == "string" and data[3] or ""
+                local transParts, romParts = {}, {}
+
+                if type(data[1]) == "table" then
+                    for _, seg in ipairs(data[1]) do
+                        if type(seg) == "table" then
+                            if type(seg[1]) == "string" then
+                                table.insert(transParts, seg[1])
+                            end
+                            if type(seg[4]) == "string" and seg[4] ~= "" then
+                                table.insert(romParts, seg[4])
+                            elseif type(seg[3]) == "string" and seg[3] ~= "" then
+                                table.insert(romParts, seg[3])
+                            end
+                        end
+                    end
                 end
-                if type(seg[4]) == "string" and seg[4] ~= "" then
-                    table.insert(romParts, seg[4])
-                elseif type(seg[3]) == "string" and seg[3] ~= "" then
-                    table.insert(romParts, seg[3])
+
+                local translated = table.concat(transParts, ""):gsub("^%s+", ""):gsub("%s+$", "")
+                local romanized = normalizeRomanizedASCII(table.concat(romParts, " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", ""))
+
+                -- Hanya kosongkan jika lagu memang berbahasa Indonesia dan hasil terjemahannya identik
+                if srcLang == "id" and string.lower(translated) == key then
+                    translated = ""
                 end
+                if not hasNonLatinScript(cleanInput) and string.lower(romanized) == key then
+                    romanized = ""
+                end
+
+                transCache[key] = {Trans = translated, Rom = romanized, Done = true}
+                return translated, romanized
             end
         end
-        local translated = table.concat(transParts, ""):gsub("^%s+", ""):gsub("%s+$", "")
-        local romanized = normalizeRomanizedASCII(table.concat(romParts, " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", ""))
-
-        if string.lower(translated) == key then translated = "" end
-        if string.lower(romanized) == key then romanized = "" end
-
-        transCache[key] = {Trans = translated, Rom = romanized}
-        return translated, romanized
     end
+
     return "", ""
 end
 
+local refreshCurrentLyricDisplay
+
+-- Batch Translation (Menerjemahkan 10 baris sekaligus dalam 1 Request agar cepat & bebas blokir Rate-Limit)
 local function prefetchTranslations(lyricList, myToken)
     task.spawn(function()
+        local batchSize = 10
         local i = 1
         while i <= #lyricList and transToken == myToken do
             if not translateEnabled and not romanizeEnabled then
-                task.wait(0.5)
+                task.wait(0.4)
             else
-                local lineObj = lyricList[i]
-                local rawTxt = lineObj and lineObj.Text or ""
-                if rawTxt ~= "" and rawTxt ~= "♪" and (lineObj.Trans == nil or lineObj.Rom == nil) then
-                    local cached = transCache[string.lower(rawTxt)]
-                    if cached then
-                        lineObj.Trans = cached.Trans
-                        lineObj.Rom = cached.Rom
-                        task.wait(0.02)
-                    else
-                        local tr, rm = fetchTranslateAndRoman(rawTxt)
-                        if transToken ~= myToken then return end
-                        lineObj.Trans = tr
-                        lineObj.Rom = rm
-                        task.wait(0.15)
+                local batchIndices = {}
+                local batchTexts = {}
+
+                while #batchIndices < batchSize and i <= #lyricList do
+                    local lineObj = lyricList[i]
+                    local rawTxt = lineObj and lineObj.Text and lineObj.Text:gsub("^%s+", ""):gsub("%s+$", "") or ""
+                    if rawTxt ~= "" and rawTxt ~= "♪" then
+                        local key = string.lower(rawTxt)
+                        if transCache[key] and transCache[key].Done then
+                            lineObj.Trans = transCache[key].Trans
+                            lineObj.Rom = transCache[key].Rom
+                        elseif hasNonLatinScript(rawTxt) then
+                            -- Untuk huruf Jepang/Korea/Mandarin/Arab/Rusia, ambil per baris agar Romaji akurat
+                            local tr, rm = fetchTranslateAndRoman(rawTxt)
+                            if transToken ~= myToken then return end
+                            lineObj.Trans = tr
+                            lineObj.Rom = rm
+                            if currentIndex == i and refreshCurrentLyricDisplay then
+                                refreshCurrentLyricDisplay(false)
+                            end
+                            task.wait(0.08)
+                        else
+                            table.insert(batchIndices, i)
+                            table.insert(batchTexts, rawTxt)
+                        end
                     end
-                else
-                    task.wait(0.02)
+                    i += 1
                 end
-                i += 1
+
+                if #batchTexts > 0 and transToken == myToken then
+                    local joined = table.concat(batchTexts, "\n")
+                    local url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=id&dt=t&q=" .. HttpService:UrlEncode(joined)
+                    local body = httpGet(url)
+                    local batchSuccess = false
+
+                    if body then
+                        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+                        if ok and type(data) == "table" and type(data[1]) == "table" then
+                            local fullTrans = {}
+                            for _, seg in ipairs(data[1]) do
+                                if type(seg) == "table" and type(seg[1]) == "string" then
+                                    table.insert(fullTrans, seg[1])
+                                end
+                            end
+                            local splitLines = string.split(table.concat(fullTrans, ""), "\n")
+                            if #splitLines == #batchIndices then
+                                batchSuccess = true
+                                local srcLang = type(data[3]) == "string" and data[3] or ""
+                                for idx, lyricIdx in ipairs(batchIndices) do
+                                    local origTxt = batchTexts[idx]
+                                    local trLine = (splitLines[idx] or ""):gsub("^%s+", ""):gsub("%s+$", "")
+                                    if srcLang == "id" and string.lower(trLine) == string.lower(origTxt) then
+                                        trLine = ""
+                                    end
+                                    lyricList[lyricIdx].Trans = trLine
+                                    lyricList[lyricIdx].Rom = ""
+                                    transCache[string.lower(origTxt)] = {Trans = trLine, Rom = "", Done = true}
+                                    if currentIndex == lyricIdx and refreshCurrentLyricDisplay then
+                                        refreshCurrentLyricDisplay(false)
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    -- Fallback per-baris jika batch tidak sama jumlah barisnya
+                    if not batchSuccess then
+                        for _, lyricIdx in ipairs(batchIndices) do
+                            if transToken ~= myToken then return end
+                            local origTxt = lyricList[lyricIdx].Text
+                            local tr, rm = fetchTranslateAndRoman(origTxt)
+                            lyricList[lyricIdx].Trans = tr
+                            lyricList[lyricIdx].Rom = rm
+                            if currentIndex == lyricIdx and refreshCurrentLyricDisplay then
+                                refreshCurrentLyricDisplay(false)
+                            end
+                            task.wait(0.08)
+                        end
+                    end
+                    task.wait(0.12)
+                else
+                    task.wait(0.03)
+                end
             end
         end
     end)
@@ -792,7 +887,7 @@ local function updateDisplayedLyric(prevTxt, currTxt, nextTxt, indoTxt, romTxt, 
     end
 end
 
-local function refreshCurrentLyricDisplay(animatePop)
+refreshCurrentLyricDisplay = function(animatePop)
     if currentIndex > 0 and lyrics[currentIndex] then
         local p = 1
         while lyrics[currentIndex - p] and lyrics[currentIndex - p].Text == "" do p += 1 end
@@ -1122,7 +1217,6 @@ RunService.Heartbeat:Connect(function()
         end
     end
 
-    -- Kalkulasi Real-Time Smart Lyric Pacing Bar (Durasi Baris Saat Ini ke Baris Berikutnya)
     if found > 0 and lyrics[found] then
         local startT = lyrics[found].Time
         local nextT = (lyrics[found + 1] and lyrics[found + 1].Time) or math.max(startT + 4, totTime * lyricSpeed)
@@ -1149,7 +1243,8 @@ RunService.Heartbeat:Connect(function()
         local currTxt = text ~= "" and text or "♪"
         local nextTxt = lyrics[found + n] and lyrics[found + n].Text or ""
 
-        if (translateEnabled or romanizeEnabled) and (line.Trans == nil or line.Rom == nil) and text ~= "" and text ~= "♪" then
+        -- Jika baris ini belum sempat diterjemahkan oleh Batch, ambil langsung secara instan
+        if (translateEnabled or romanizeEnabled) and (line.Trans == nil or line.Trans == "") and text ~= "" and text ~= "♪" then
             task.spawn(function()
                 local tr, rm = fetchTranslateAndRoman(text)
                 line.Trans = tr
@@ -1173,5 +1268,5 @@ RunService.Heartbeat:Connect(function()
 end)
 
 applySubtitleStyle()
-showToast("Koplingtify Lite v2.5 (Auto-Save & Pacing Bar) siap!")
-print("Koplingtify Lite v2.5 Modular loaded.")
+showToast("Koplingtify Lite v2.5 siap!")
+print("Koplingtify Lite v2.5 Modular (Pure ASCII Filter + Batch Translate) loaded.")
