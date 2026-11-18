@@ -4,6 +4,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local WorldModule = {}
 
@@ -35,9 +36,13 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     local makeLabel = UI.MakeLabel
     local makeButton = UI.MakeButton
     local makeHoldable = UI.MakeHoldable
+    local enableDrag = UI.EnableDrag
 
     local isNoClipEnabled = Config.isNoClipEnabled == true
     local isWallViewEnabled = Config.isWallViewEnabled == true
+    local isShiftLockEnabled = Config.isShiftLockEnabled == true
+    local isShiftPinEnabled = Config.isShiftPinEnabled == true
+
     local savedCanCollide, fadedWallParts = {}, {}
     local origOcclusionMode = player.DevCameraOcclusionMode
 
@@ -60,6 +65,8 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     local function syncWorldConfig()
         Config.isNoClipEnabled = isNoClipEnabled
         Config.isWallViewEnabled = isWallViewEnabled
+        Config.isShiftLockEnabled = isShiftLockEnabled
+        Config.isShiftPinEnabled = isShiftPinEnabled
         Config.orbitDistance = orbitDistance
         Config.orbitHeight = orbitHeight
         Config.orbitSpeed = orbitSpeed
@@ -70,6 +77,77 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         saveConfig()
     end
 
+    -- ======================== INJEKSI TOMBOL SHIFTLOCK & FLOATING PIN ========================
+    local worldActionParent = noclipBtn.Parent
+    local rowY = noclipBtn.Position.Y.Offset
+    local rowH = noclipBtn.Size.Y.Offset
+
+    -- Sesuaikan baris tombol menjadi 3 kolom + 1 tombol Pin Floating kecil
+    noclipBtn.Position = UDim2.new(0, 0, 0, rowY)
+    noclipBtn.Size = UDim2.new(0.31, -2, 0, rowH)
+    noclipBtn.TextSize = 10
+
+    wallViewBtn.Position = UDim2.new(0.31, 2, 0, rowY)
+    wallViewBtn.Size = UDim2.new(0.31, -2, 0, rowH)
+    wallViewBtn.TextSize = 10
+
+    local shiftLockBtn = makeButton(
+        worldActionParent,
+        "🎯 Shift: OFF",
+        UDim2.new(0.62, 4, 0, rowY),
+        UDim2.new(0.28, -4, 0, rowH),
+        Color3.fromRGB(36, 41, 50)
+    )
+    shiftLockBtn.TextSize = 10
+
+    local shiftPinBtn = makeButton(
+        worldActionParent,
+        "📌",
+        UDim2.new(0.90, 4, 0, rowY),
+        UDim2.new(0.10, -4, 0, rowH),
+        Color3.fromRGB(45, 52, 64)
+    )
+    shiftPinBtn.TextSize = 11
+
+    -- Tombol Floating ShiftLock (Bisa digeser bebas di layar HP)
+    local floatShiftBtn = Instance.new("TextButton")
+    floatShiftBtn.Name = "KoplingFloatShiftLock"
+    floatShiftBtn.Size = UDim2.new(0, 44, 0, 44)
+    floatShiftBtn.Position = UDim2.new(0.88, -22, 0.55, 0)
+    floatShiftBtn.BackgroundColor3 = Color3.fromRGB(22, 27, 36)
+    floatShiftBtn.BackgroundTransparency = 0.15
+    floatShiftBtn.Text = "🎯"
+    floatShiftBtn.TextColor3 = Color3.fromRGB(240, 245, 255)
+    floatShiftBtn.Font = Enum.Font.GothamBold
+    floatShiftBtn.TextSize = 18
+    floatShiftBtn.Visible = isShiftPinEnabled
+    floatShiftBtn.Parent = gui
+    Instance.new("UICorner", floatShiftBtn).CornerRadius = UDim.new(1, 0)
+
+    local floatShiftStroke = Instance.new("UIStroke", floatShiftBtn)
+    floatShiftStroke.Color = Color3.fromRGB(70, 80, 100)
+    floatShiftStroke.Thickness = 1.8
+
+    -- Indikator Crosshair titik tengah saat ShiftLock aktif
+    local crosshairDot = Instance.new("Frame")
+    crosshairDot.Name = "ShiftLockCrosshair"
+    crosshairDot.Size = UDim2.new(0, 6, 0, 6)
+    crosshairDot.Position = UDim2.new(0.5, -3, 0.5, -3)
+    crosshairDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    crosshairDot.BackgroundTransparency = 0.2
+    crosshairDot.BorderSizePixel = 0
+    crosshairDot.Visible = false
+    crosshairDot.Parent = gui
+    Instance.new("UICorner", crosshairDot).CornerRadius = UDim.new(1, 0)
+    local chStroke = Instance.new("UIStroke", crosshairDot)
+    chStroke.Color = Color3.fromRGB(0, 0, 0)
+    chStroke.Thickness = 1
+
+    if enableDrag then
+        enableDrag(floatShiftBtn, floatShiftBtn)
+    end
+
+    -- ======================== CINEMATIC BARS ========================
     local cinemaGui = Instance.new("ScreenGui")
     cinemaGui.Name = "KoplingtifyCinemaBars"
     cinemaGui.IgnoreGuiInset = true
@@ -344,7 +422,50 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         end)
     end
 
-    -- Terapkan status simpanan awal untuk NoClip, Tembok, dan Cinematic Bar
+    -- ======================== LOGIKA SHIFTLOCK CUSTOM ========================
+    local function releaseShiftLockState()
+        local char = player.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.AutoRotate = true
+            hum.CameraOffset = Vector3.new(0, 0, 0)
+        end
+        crosshairDot.Visible = false
+    end
+
+    local function updateShiftLockVisuals()
+        shiftLockBtn.Text = "🎯 Shift: " .. (isShiftLockEnabled and "ON" or "OFF")
+        shiftLockBtn.BackgroundColor3 = isShiftLockEnabled and Color3.fromRGB(35, 155, 95) or Color3.fromRGB(36, 41, 50)
+
+        floatShiftBtn.BackgroundColor3 = isShiftLockEnabled and Color3.fromRGB(30, 150, 90) or Color3.fromRGB(22, 27, 36)
+        floatShiftStroke.Color = isShiftLockEnabled and Color3.fromRGB(85, 255, 160) or Color3.fromRGB(70, 80, 100)
+
+        shiftPinBtn.BackgroundColor3 = isShiftPinEnabled and Color3.fromRGB(140, 85, 215) or Color3.fromRGB(45, 52, 64)
+        floatShiftBtn.Visible = isShiftPinEnabled
+
+        if not isShiftLockEnabled then
+            releaseShiftLockState()
+        end
+    end
+
+    local function toggleShiftLock()
+        isShiftLockEnabled = not isShiftLockEnabled
+        updateShiftLockVisuals()
+        syncWorldConfig()
+        showToast("ShiftLock " .. (isShiftLockEnabled and "ON (Terkunci)" or "OFF"))
+    end
+
+    shiftLockBtn.MouseButton1Click:Connect(toggleShiftLock)
+    floatShiftBtn.MouseButton1Click:Connect(toggleShiftLock)
+
+    shiftPinBtn.MouseButton1Click:Connect(function()
+        isShiftPinEnabled = not isShiftPinEnabled
+        updateShiftLockVisuals()
+        syncWorldConfig()
+        showToast("Tombol Floating ShiftLock " .. (isShiftPinEnabled and "Ditampilkan" or "Disembunyikan"))
+    end)
+
+    -- Terapkan status awal dari Config
     noclipBtn.Text = "👻 NoClip: " .. (isNoClipEnabled and "ON" or "OFF")
     noclipBtn.BackgroundColor3 = isNoClipEnabled and Color3.fromRGB(205, 115, 45) or Color3.fromRGB(36, 41, 50)
 
@@ -352,6 +473,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     wallViewBtn.BackgroundColor3 = isWallViewEnabled and Color3.fromRGB(50, 140, 210) or Color3.fromRGB(36, 41, 50)
     if isWallViewEnabled then applyWallOcclusionMode() end
     if isCinematicBars then setCinematicBars(true, true) end
+    updateShiftLockVisuals()
 
     noclipBtn.MouseButton1Click:Connect(function()
         isNoClipEnabled = not isNoClipEnabled
@@ -436,6 +558,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         local cam = workspace.CurrentCamera
 
+        -- 1. Update Pelacak User
         if trackedPlayer and trackedPlayer.Parent then
             local tChar = trackedPlayer.Character
             local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
@@ -467,6 +590,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
             end
         end
 
+        -- 2. Update Kamera Orbit
         if isOrbitEnabled and hrp and hum and cam then
             cam.CameraType = Enum.CameraType.Scriptable
             cam.FieldOfView = cam.FieldOfView + (orbitFOV - cam.FieldOfView) * math.clamp(dt * 10, 0, 1)
@@ -486,6 +610,38 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
             resetCameraToNormal()
         end
 
+        -- 3. Update ShiftLock (Aktif jika Orbit sedang mati)
+        if isShiftLockEnabled and not isOrbitEnabled and hrp and hum and cam then
+            if hum.Sit or hum.Health <= 0 then
+                hum.AutoRotate = true
+                hum.CameraOffset = Vector3.new(0, 0, 0)
+                crosshairDot.Visible = false
+            else
+                hum.AutoRotate = false
+                -- Jika tidak sedang First-Person, beri offset bahu kanan khas ShiftLock (1.75 stud)
+                local camDist = (cam.CFrame.Position - cam.Focus.Position).Magnitude
+                if camDist > 1.2 then
+                    hum.CameraOffset = hum.CameraOffset:Lerp(Vector3.new(1.75, 0, 0), math.clamp(dt * 15, 0, 1))
+                else
+                    hum.CameraOffset = Vector3.new(0, 0, 0)
+                end
+
+                local lookVec = cam.CFrame.LookVector
+                local flatLook = Vector3.new(lookVec.X, 0, lookVec.Z)
+                if flatLook.Magnitude > 0.001 then
+                    hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + flatLook.Unit)
+                end
+                crosshairDot.Visible = true
+            end
+        elseif not isShiftLockEnabled or isOrbitEnabled then
+            crosshairDot.Visible = false
+            if isOrbitEnabled and hum then
+                hum.AutoRotate = true
+                hum.CameraOffset = Vector3.new(0, 0, 0)
+            end
+        end
+
+        -- 4. Update View Tembok Transparan
         if isWallViewEnabled and cam and hrp then
             restoreFadedWalls()
             local okParts, obstructing = pcall(function()
@@ -507,6 +663,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
             if isOrbitEnabled then isOrbitEnabled = false; resetCameraToNormal() end
             if isNoClipEnabled then isNoClipEnabled = false; restoreCharacterCollision() end
             if isWallViewEnabled then isWallViewEnabled = false; applyWallOcclusionMode() end
+            if isShiftLockEnabled then isShiftLockEnabled = false; releaseShiftLockState() end
             clearPlayerLocator()
             if cinemaGui then pcall(function() cinemaGui:Destroy() end) end
         end
