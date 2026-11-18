@@ -1,285 +1,388 @@
 -- =================================================================================
--- KOPLINGTIFY LITE v2.5 - ANTI-DEACCENT & CONTEXT BREAKER (KOPLINGTIFY_FILTER.luau)
+-- KOPLINGTIFY LITE v2.5 - MULTI-POINT PHONETIC & ANTI-ODER FILTER (KOPLINGTIFY_FILTER.luau)
 -- =================================================================================
 local FilterModule = {}
 
--- Pilihan Mode Bypass (100% Huruf A-Z Murni, kebal De-Accenter & Punctuation Stripper Roblox):
--- 1 = Double-Vowel / Soft-Insert (Contoh: "lakuukan", "maraah", "tubuuhmu", "tiduur", "fuvck") -> PALING AMAN
--- 2 = Visual Leetspeak (Contoh: "l4kukan", "m4rah", "tvbvhmu", "fvck")
--- 3 = Syllable Space Split (Contoh: "la kukan", "ma rah", "tu buhmu", "fu ck")
+-- Pilihan Mode Bypass:
+-- 1 = Phonetic Multi-Point + Soft-H (Contoh: "dhengarkan ahku ku ihngin menjhadi phacharmu") -> PALING AMAN
+-- 2 = Alternative Phonetic / X-Mask
+-- 3 = Phonetic Split
 FilterModule.BypassMode = 1
 
--- Kamus Spesifik Kata Tier-1 & Kata Pemicu Konteks Kalimat (Mode 1, Mode 2, Mode 3)
 local directBypassMap = {
-    -- Kata Pemicu Konteks Emosi & Tindakan (Seperti "sering kau lakukan saat kau marah")
-    ["lakukan"]       = {"lakuukan", "l4kukan", "la kukan"},
-    ["kulakukan"]     = {"kulakuukan", "kul4kukan", "ku lakukan"},
-    ["melakukan"]     = {"melakuukan", "mel4kukan", "me lakukan"},
-    ["dilakukan"]     = {"dilakuukan", "dil4kukan", "di lakukan"},
-    ["perbuat"]       = {"perbuaat", "p3rbuat", "per buat"},
-    ["marah"]         = {"maraah", "m4rah", "ma rah"},
-    ["marahi"]        = {"maraahi", "m4rahi", "ma rahi"},
-    ["memarahi"]      = {"memaraahi", "mem4rahi", "me marahi"},
-    ["kemarahan"]     = {"kemaraahan", "kem4rahan", "ke marahan"},
-    ["emosi"]         = {"emosii", "3mosi", "e mosi"},
-    ["kesal"]         = {"kesaal", "k3sal", "ke sal"},
-    ["murka"]         = {"murkaa", "mvrka", "mur ka"},
-    ["amuk"]          = {"amuuk", "4muk", "a muk"},
-    ["mengamuk"]      = {"mengamuuk", "meng4muk", "me ngamuk"},
-    ["benci"]         = {"bencii", "b3nci", "ben ci"},
-    ["membenci"]      = {"membencii", "memb3nci", "mem benci"},
-    ["kubenci"]       = {"kubencii", "kub3nci", "ku benci"},
-    ["dendam"]        = {"dendaam", "d3ndam", "den dam"},
-    ["kecewa"]        = {"kecewaa", "k3cewa", "ke cewa"},
-    ["sakiti"]        = {"sakiiti", "s4kiti", "sa kiti"},
-    ["menyakiti"]     = {"menyakiiti", "meny4kiti", "me nyakiti"},
-    ["menyakitimu"]   = {"menyakiitimu", "meny4kitimu", "me nyakitimu"},
-    ["kusakiti"]      = {"kusakiiti", "kus4kiti", "ku sakiti"},
-    ["tersakiti"]     = {"tersakiiti", "ters4kiti", "ter sakiti"},
-    ["lukai"]         = {"lukaai", "lvkai", "lu kai"},
-    ["melukai"]       = {"melukaai", "melvkai", "me lukai"},
-    ["melukaimu"]     = {"melukaaimu", "melvkaimu", "me lukaimu"},
-    ["teriak"]        = {"teriaak", "t3riak", "te riak"},
-    ["berteriak"]     = {"berteriaak", "bert3riak", "ber teriak"},
-    ["bentak"]        = {"bentaak", "b3ntak", "ben tak"},
-    ["membentak"]     = {"membentaak", "memb3ntak", "mem bentak"},
-    ["tampar"]        = {"tampaar", "t4mpar", "tam par"},
-    ["menampar"]      = {"menampaar", "men4mpar", "me nampar"},
-    ["pukul"]         = {"pukuul", "pvkul", "pu kul"},
-    ["memukul"]       = {"memukuul", "memvkul", "me mukul"},
-    ["hajar"]         = {"hajaar", "h4jar", "ha jar"},
-    ["menghajar"]     = {"menghajaar", "mengh4jar", "meng hajar"},
-    ["tendang"]       = {"tendaang", "t3ndang", "ten dang"},
-    ["dorong"]        = {"doroong", "d0rong", "do rong"},
-    ["mendorong"]     = {"mendoroong", "mend0rong", "men dorong"},
-    ["paksa"]         = {"paksaa", "p4ksa", "pak sa"},
-    ["memaksa"]       = {"memaksaa", "mem4ksa", "me maksa"},
-    ["bohong"]        = {"bohoong", "b0hong", "bo hong"},
-    ["bohongi"]       = {"bohoongi", "b0hongi", "bo hongi"},
-    ["membohongi"]    = {"membohoongi", "memb0hongi", "mem bohongi"},
-    ["tipu"]          = {"tipuu", "tIpu", "ti pu"},
-    ["menipu"]        = {"menipuu", "menIpu", "me nipu"},
-    ["khianat"]       = {"khianaat", "khIanat", "khi anat"},
-    ["khianati"]      = {"khianaati", "khIanati", "khi anati"},
-    ["mengkhianati"]  = {"mengkhianaati", "mengkhIanati", "meng khianati"},
-    ["tinggalkan"]    = {"tinggalkaan", "tInggalkan", "ting galkan"},
-    ["meninggalkan"]  = {"meninggalkaan", "menInggalkan", "me ninggalkan"},
-    ["kutinggalkan"]  = {"kutinggalkaan", "kutInggalkan", "ku tinggalkan"},
-    ["campakkan"]     = {"campakkaan", "c4mpakkan", "cam pakkan"},
-    ["buang"]         = {"buaang", "bvang", "bu ang"},
-    ["membuang"]      = {"membuaang", "membvang", "mem buang"},
-    ["usir"]          = {"usiir", "vsir", "u sir"},
-    ["mengusir"]      = {"mengusiir", "mengvsir", "meng usir"},
-    ["ancaman"]       = {"ancamaan", "4ncaman", "an caman"},
-    ["ancam"]         = {"ancaam", "4ncam", "an cam"},
-    ["mengancam"]     = {"mengancaam", "meng4ncam", "meng ancam"},
-    ["balas"]         = {"balaas", "b4las", "ba las"},
-    ["membalas"]      = {"membalaas", "memb4las", "mem balas"},
-    ["hukum"]         = {"hukuum", "hvkum", "hu kum"},
-    ["menghukum"]     = {"menghukuum", "menghvkum", "meng hukum"},
-    ["salahkan"]      = {"salahkaan", "s4lahkan", "sa lahkan"},
-    ["menyalahkan"]   = {"menyalahkaan", "meny4lahkan", "me nyalahkan"},
-    ["tuduh"]         = {"tuduuh", "tvduh", "tu duh"},
-    ["menuduh"]       = {"menuduuh", "menvduh", "me nuduh"},
-    ["hina"]          = {"hinaa", "hIna", "hi na"},
-    ["menghina"]      = {"menghinaa", "menghIna", "meng hina"},
-    ["ejek"]          = {"ejeek", "3jek", "e jek"},
-    ["mengejek"]      = {"mengejeek", "meng3jek", "me ngejek"},
-    ["caci"]          = {"cacii", "c4ci", "ca ci"},
-    ["maki"]          = {"makii", "m4ki", "ma ki"},
-    ["memaki"]        = {"memakii", "mem4ki", "me maki"},
-    ["kutuk"]         = {"kutuuk", "kvtuk", "ku tuk"},
-    ["mengutuk"]      = {"mengutuuk", "mengvtuk", "me ngutuk"},
-    ["tangis"]        = {"tangiis", "t4ngis", "ta ngis"},
-    ["menangis"]      = {"menangiis", "men4ngis", "me nangis"},
-    [" menangisi"]    = {"menangiisi", "men4ngisi", "me nangisi"},
-    ["kejam"]         = {"kejaam", "k3jam", "ke jam"},
-    ["jahat"]         = {"jahaat", "j4hat", "ja hat"},
-    ["egois"]         = {"egoiis", "3gois", "e gois"},
-    ["angkuh"]        = {"angkuuh", "4ngkuh", "ang kuh"},
-    ["sombong"]       = {"somboong", "s0mbong", "som bong"},
-    ["munafik"]       = {"munafiik", "mun4fik", "mu nafik"},
-    ["palsu"]         = {"palsuu", "p4lsu", "pal su"},
-    ["curang"]        = {"curaang", "cvrang", "cu rang"},
-    ["racun"]         = {"racuun", "r4cun", "ra cun"},
-    ["beracun"]       = {"beracuun", "ber4cun", "be racun"},
+    -- ==================== ANTI-ONLINE DATING (ODer) & ROMANCE CONTEXT (ID) ====================
+    ["aku"]           = {"ahku", "4ku", "a ku"},
+    ["kamu"]          = {"khamu", "k4mu", "ka mu"},
+    ["kamunya"]       = {"khamunya", "k4munya", "kamu nya"},
+    ["kau"]           = {"khau", "k4u", "ka u"},
+    ["engkau"]        = {"engkhau", "3ngkau", "eng kau"},
+    ["dirimu"]        = {"dihrimu", "dIrimu", "di rimu"},
+    ["diriku"]        = {"dihriku", "dIriku", "di riku"},
+    ["dirinya"]       = {"dihrinya", "dIrinya", "di rinya"},
+    ["dengar"]        = {"dhengar", "d3ngar", "de ngar"},
+    ["dengarkan"]     = {"dhengarkan", "d3ngarkan", "de ngarkan"},
+    ["dengarkanlah"]  = {"dhengarkanlah", "d3ngarkanlah", "de ngarkanlah"},
+    ["ingin"]         = {"ihngin", "Ingin", "i ngin"},
+    ["kuingin"]       = {"kuihngin", "kuIngin", "ku ingin"},
+    ["inginkan"]      = {"ihnginkan", "Inginkan", "i nginkan"},
+    ["kuinginkan"]    = {"kuihnginkan", "kuInginkan", "ku inginkan"},
+    ["menginginkan"]  = {"mengihnginkan", "mengInginkan", "meng inginkan"},
+    ["jadi"]          = {"jhadi", "j4di", "ja di"},
+    ["menjadi"]       = {"menjhadi", "menj4di", "men jadi"},
+    ["pacar"]         = {"phachar", "p4car", "pa car"},
+    ["pacarku"]       = {"phacharku", "p4carku", "pa carku"},
+    ["pacarmu"]       = {"phacharmu", "p4carmu", "pa carmu"},
+    ["pacaran"]       = {"phacharan", "p4caran", "pa caran"},
+    ["berpacaran"]    = {"berphacharan", "berp4caran", "ber pacaran"},
+    ["kekasih"]       = {"kekhasih", "kek4sih", "ke kasih"},
+    ["kekasihku"]     = {"kekhasihku", "kek4sihku", "ke kasihku"},
+    ["kekasihmu"]     = {"kekhasihmu", "kek4sihmu", "ke kasihmu"},
+    ["pasangan"]      = {"phasangan", "p4sangan", "pa sangan"},
+    ["pasanganku"]    = {"phasanganku", "p4sanganku", "pa sanganku"},
+    ["pasanganmu"]    = {"phasanganmu", "p4sanganmu", "pa sanganmu"},
+    ["jodoh"]         = {"jhodoh", "j0doh", "jo doh"},
+    ["jodohku"]       = {"jhodohku", "j0dohku", "jo dohku"},
+    ["jodohmu"]       = {"jhodohmu", "j0dohmu", "jo dohmu"},
+    ["milik"]         = {"mihlik", "mIlIk", "mi lik"},
+    ["milikku"]       = {"mihlikku", "mIlIkku", "mi likku"},
+    ["milikmu"]       = {"mihlikmu", "mIlIkmu", "mi likmu"},
+    ["memiliki"]      = {"memihliki", "memIlIki", "me miliki"},
+    ["memilikimu"]    = {"memihlikimu", "memIlIkimu", "me milikimu"},
+    ["nikah"]         = {"nihkah", "nIkah", "ni kah"},
+    ["menikah"]       = {"menihkah", "menIkah", "me nikah"},
+    ["menikahimu"]    = {"menihkahimu", "menIkahimu", "me nikahimu"},
+    ["suami"]         = {"suhami", "svami", "su ami"},
+    ["suamiku"]       = {"suhamiku", "svamiku", "su amiku"},
+    ["istri"]         = {"ihstri", "Istri", "is tri"},
+    ["istriku"]       = {"ihstriku", "Istriku", "is triku"},
 
-    -- Kata Pemicu Konteks Fisik / Romantis Indonesia
-    ["bayang"]        = {"bayangin", "b4yang", "ba yang"},
-    ["bayangkan"]     = {"bayangkaan", "b4yangkan", "ba yangkan"},
-    ["kubayangkan"]   = {"kubayangkaan", "kub4yangkan", "ku bayangkan"},
-    ["membayangkan"]  = {"membayangkaan", "memb4yangkan", "mem bayangkan"},
-    ["terbayang"]     = {"terbayaang", "terb4yang", "ter bayang"},
-    ["bayanganmu"]    = {"bayangaanmu", "b4yanganmu", "ba yanganmu"},
-    ["tubuh"]         = {"tubuuh", "tvbuh", "tu buh"},
-    ["tubuhmu"]       = {"tubuuhmu", "tvbuhmu", "tu buhmu"},
-    ["tubuhku"]       = {"tubuuhku", "tvbuhku", "tu buhku"},
-    ["badan"]         = {"badaan", "b4dan", "ba dan"},
-    ["badanmu"]       = {"badaanmu", "b4danmu", "ba danmu"},
-    ["badanku"]       = {"badaanku", "b4danku", "ba danku"},
-    ["raga"]          = {"ragaa", "r4ga", "ra ga"},
-    ["ragamu"]        = {"ragaamu", "r4gamu", "ra gamu"},
-    ["tidur"]         = {"tiduur", "tIdur", "ti dur"},
-    ["tidurlah"]      = {"tiduurlah", "tIdurlah", "ti durlah"},
-    ["meniduri"]      = {"meniduuri", "menIduri", "me niduri"},
-    ["kutiduri"]      = {"kutiduuri", "kutIduri", "ku tiduri"},
-    ["ketiduran"]     = {"ketiduuran", "ketIduran", "ke tiduran"},
-    ["sekasur"]       = {"sekaasur", "sek4sur", "se kasur"},
-    ["seranjang"]     = {"seranjaang", "ser4njang", "se ranjang"},
-    ["ranjang"]       = {"ranjaang", "r4njang", "ran jang"},
-    ["kasur"]         = {"kasuur", "k4sur", "ka sur"},
-    ["kamar"]         = {"kamaar", "k4mar", "ka mar"},
-    ["kamarmu"]       = {"kamaarmu", "k4marmu", "ka marmu"},
-    ["kamarku"]       = {"kamaarku", "k4marku", "ka marku"},
-    ["peluk"]         = {"peluuk", "p3luk", "pe luk"},
-    ["memeluk"]       = {"memeluuk", "mem3luk", "me meluk"},
-    ["memelukmu"]     = {"memeluukmu", "mem3lukmu", "me melukmu"},
-    ["kupeluk"]       = {"kupeluuk", "kup3luk", "ku peluk"},
-    ["pelukan"]       = {"peluukan", "p3lukan", "pe lukan"},
-    ["pelukanmu"]     = {"peluukanmu", "p3lukanmu", "pe lukanmu"},
-    ["cium"]          = {"ciuum", "cIum", "ci um"},
-    ["mencium"]       = {"menciuum", "mencIum", "men cium"},
-    ["menciummu"]     = {"menciuummu", "mencIummu", "men ciummu"},
-    ["kucium"]        = {"kuciuum", "kucIum", "ku cium"},
-    ["ciuman"]        = {"ciuuman", "cIuman", "ci uman"},
-    ["kecup"]         = {"kecuup", "k3cup", "ke cup"},
-    ["mengecup"]      = {"mengecuup", "meng3cup", "me ngecup"},
-    ["sentuh"]        = {"sentuuh", "s3ntuh", "sen tuh"},
-    ["menyentuh"]     = {"menyentuuh", "meny3ntuh", "me nyentuh"},
-    ["menyentuhmu"]   = {"menyentuuhmu", "meny3ntuhmu", "me nyentuhmu"},
-    ["kusentuh"]      = {"kusentuuh", "kus3ntuh", "ku sentuh"},
-    ["sentuhan"]      = {"sentuuhan", "s3ntuhan", "sen tuhan"},
-    ["belai"]         = {"belaai", "b3lai", "be lai"},
-    ["membelai"]      = {"membelaai", "memb3lai", "mem belai"},
-    ["raba"]          = {"rabaa", "r4ba", "ra ba"},
-    ["meraba"]        = {"merabaa", "mer4ba", "me raba"},
-    ["pangku"]        = {"pangkuu", "p4ngku", "pang ku"},
-    ["memangku"]      = {"memangkuu", "mem4ngku", "me mangku"},
-    ["bibir"]         = {"bibiir", "bIbir", "bi bir"},
-    ["bibirmu"]       = {"bibiirmu", "bIbirmu", "bi birmu"},
-    ["bibirku"]       = {"bibiirku", "bIbirku", "bi birku"},
-    ["lidah"]         = {"lidaah", "lIdah", "li dah"},
-    ["leher"]         = {"leheer", "l3her", "le her"},
-    ["lehermu"]       = {"leheermu", "l3hermu", "le hermu"},
-    ["dada"]          = {"dadaa", "d4da", "da da"},
-    ["dadamu"]        = {"dadaamu", "d4damu", "da damu"},
-    ["dadaku"]        = {"dadaaku", "d4daku", "da daku"},
-    ["paha"]          = {"pahaa", "p4ha", "pa ha"},
-    ["pahamu"]        = {"pahaamu", "p4hamu", "pa hamu"},
-    ["kulit"]         = {"kuliit", "kulIt", "ku lit"},
-    ["kulitmu"]       = {"kuliitmu", "kulItmu", "ku litmu"},
-    ["desah"]         = {"desaah", "d3sah", "de sah"},
-    ["mendesah"]      = {"mendesaah", "mend3sah", "men desah"},
-    ["desahan"]       = {"desaahan", "d3sahan", "de sahan"},
-    ["keringat"]      = {"keringaat", "kerIngat", "ke ringat"},
-    ["bercinta"]      = {"berciinta", "bercInta", "ber cinta"},
-    ["cinta"]         = {"ciinta", "cInta", "cin ta"},
-    ["cintaku"]       = {"ciintaku", "cIntaku", "cin taku"},
-    ["cintamu"]       = {"ciintamu", "cIntamu", "cin tamu"},
-    ["mencintai"]     = {"menciintai", "mencIntai", "men cintai"},
-    ["mencintaimu"]   = {"menciintaimu", "mencIntaimu", "men cintaimu"},
-    ["sayang"]        = {"sayaang", "s4yang", "sa yang"},
-    ["sayangku"]      = {"sayaangku", "s4yangku", "sa yangku"},
-    ["kekasih"]       = {"kekaasih", "kek4sih", "ke kasih"},
-    ["kekasihku"]     = {"kekaasihku", "kek4sihku", "ke kasihku"},
-    ["pacar"]         = {"pacaar", "p4car", "pa car"},
-    ["pacarku"]       = {"pacaarku", "p4carku", "pa carku"},
-    ["pacarmu"]       = {"pacaarmu", "p4carmu", "pa carmu"},
-    ["memiliki"]      = {"memiliiki", "memIlIki", "me miliki"},
-    ["memilikimu"]    = {"memiliikimu", "memIlIkimu", "me milikimu"},
-    ["milikku"]       = {"miliikku", "mIlIkku", "mi likku"},
-    ["milikmu"]       = {"miliikmu", "mIlIkmu", "mi likmu"},
-    ["dirimu"]        = {"diriimu", "dIrimu", "di rimu"},
-    ["diriku"]        = {"diriiku", "dIriku", "di riku"},
-    ["memudar"]       = {"memudaar", "memvdar", "me mudar"},
-    ["memnudar"]      = {"memnudaar", "memnvdar", "mem nudar"},
-    ["remang"]        = {"remaang", "r3mang", "re mang"},
-    ["sunyi"]         = {"sunyii", "svnyi", "su nyi"},
-    ["hampa"]         = {"hampaa", "h4mpa", "ham pa"},
+    -- ==================== TIER-1 INGGRIS (MULTI-POINT PHONETIC - EDIT DISTANCE >= 2) ====================
+    ["fuck"]          = {"fuhq", "phuxk", "fu q"},
+    ["fucks"]         = {"fuhqs", "phuxks", "fu qs"},
+    ["fucking"]       = {"fuhqing", "phuxking", "fu qing"},
+    ["fuckin"]        = {"fuhqin", "phuxkin", "fu qin"},
+    ["fucked"]        = {"fuhqed", "phuxked", "fu qed"},
+    ["fucker"]        = {"fuhqer", "phuxker", "fu qer"},
+    ["fuckers"]       = {"fuhqers", "phuxkers", "fu qers"},
+    ["motherfucker"]  = {"mothafuhqer", "mothaphuxker", "motha fu qer"},
+    ["motherfuckers"] = {"mothafuhqers", "mothaphuxkers", "motha fu qers"},
+    ["motherfucking"] = {"mothafuhqing", "mothaphuxking", "motha fu qing"},
+    ["wtf"]           = {"wthf", "wtph", "w t f"},
+    ["stfu"]          = {"stfhu", "stphu", "s t f u"},
 
-    -- Kata Tier-1 Inggris (Anti-Punctuation Stripper)
-    ["fuck"]          = {"fuvck", "fvck", "fu ck"},
-    ["fucks"]         = {"fuvcks", "fvcks", "fu cks"},
-    ["fucking"]       = {"fuvcking", "fvcking", "fu cking"},
-    ["fuckin"]        = {"fuvckin", "fvckin", "fu ckin"},
-    ["fucked"]        = {"fuvcked", "fvcked", "fu cked"},
-    ["fucker"]        = {"fuvcker", "fvcker", "fu cker"},
-    ["fuckers"]       = {"fuvckers", "fvckers", "fu ckers"},
-    ["motherfucker"]  = {"motherfuvcker", "motherfvcker", "mother fu cker"},
-    ["motherfucking"] = {"motherfuvcking", "motherfvcking", "mother fu cking"},
-    ["shit"]          = {"shiit", "shIt", "sh it"},
-    ["shits"]         = {"shiits", "shIts", "sh its"},
-    ["shitting"]      = {"shiitting", "shItting", "sh itting"},
-    ["shitty"]        = {"shiitty", "shItty", "sh itty"},
-    ["bullshit"]      = {"bullshiit", "bullshIt", "bull sh it"},
-    ["bitch"]         = {"biitch", "bItch", "bi tch"},
-    ["bitches"]       = {"biitches", "bItches", "bi tches"},
-    ["bitching"]      = {"biitching", "bItching", "bi tching"},
-    ["cunt"]          = {"cuvnt", "cvnt", "cu nt"},
-    ["dick"]          = {"diick", "dIck", "di ck"},
-    ["dicks"]         = {"diicks", "dIcks", "di cks"},
-    ["cock"]          = {"coock", "c0ck", "co ck"},
-    ["pussy"]         = {"puvssy", "pvssy", "pu ssy"},
-    ["nigga"]         = {"niigga", "nIgga", "ni gga"},
-    ["niggas"]        = {"niiggas", "nIggas", "ni ggas"},
-    ["nigger"]        = {"niigger", "nIgger", "ni gger"},
-    ["slut"]          = {"sluut", "sIut", "sl ut"},
-    ["whore"]         = {"whoore", "wh0re", "wh ore"},
-    ["sex"]           = {"seex", "s3x", "s ex"},
-    ["sexy"]          = {"seexy", "s3xy", "se xy"},
-    ["porn"]          = {"poorn", "p0rn", "po rn"},
-    ["nude"]          = {"nuude", "nvde", "nu de"},
-    ["nudes"]         = {"nuudes", "nvdes", "nu des"},
-    ["rape"]          = {"raape", "r4pe", "ra pe"},
-    ["kill"]          = {"kiill", "kIll", "ki ll"},
-    ["killed"]        = {"kiilled", "kIlled", "ki lled"},
-    ["killing"]       = {"kiilling", "kIlling", "ki lling"},
-    ["die"]           = {"diie", "dIe", "d ie"},
-    ["dying"]         = {"dyiing", "dyIng", "dy ing"},
-    ["dead"]          = {"deaad", "d3ad", "de ad"},
-    ["suicide"]       = {"suiicide", "suIcIde", "sui cide"},
-    ["suicidal"]      = {"suiicidal", "suIcIdal", "sui cidal"},
-    ["depressed"]     = {"depreessed", "depr3ssed", "de pressed"},
-    ["depression"]    = {"depreession", "depr3ssion", "de pression"},
-    ["angry"]         = {"angryy", "4ngry", "an gry"},
-    ["mad"]           = {"maad", "m4d", "m ad"},
-    ["hate"]          = {"haate", "h4te", "ha te"},
-    ["hurt"]          = {"huurt", "hvrt", "hu rt"},
-    ["pain"]          = {"paiin", "p4in", "pa in"},
-    ["cry"]           = {"cryy", "crY", "c ry"},
-    ["crying"]        = {"cryiing", "cryIng", "cry ing"},
+    ["suck"]          = {"suhq", "suxk", "su q"},
+    ["sucks"]         = {"suhqs", "suxks", "su qs"},
+    ["sucking"]       = {"suhqing", "suxking", "su qing"},
+    ["sucked"]        = {"suhqed", "suxked", "su qed"},
+    ["sucker"]        = {"suhqer", "suxker", "su qer"},
+    ["suckers"]       = {"suhqers", "suxkers", "su qers"},
+    ["cocksucker"]    = {"cohqsuhqer", "coxksuxker", "co q su qer"},
+
+    ["shit"]          = {"shyt", "shxt", "sh yt"},
+    ["shits"]         = {"shyts", "shxts", "sh yts"},
+    ["shitting"]      = {"shytting", "shxtting", "sh ytting"},
+    ["shitty"]        = {"shytty", "shxtty", "sh ytty"},
+    ["bullshit"]      = {"bullshyt", "bullshxt", "bull sh yt"},
+
+    ["bitch"]         = {"bych", "bxtch", "bi ch"},
+    ["bitches"]       = {"byches", "bxtches", "bi ches"},
+    ["bitching"]      = {"byching", "bxtching", "bi ching"},
+    ["bitchy"]        = {"bychy", "bxtchy", "bi chy"},
+
+    ["cunt"]          = {"kuhnt", "cvxnt", "ku nt"},
+    ["cunts"]         = {"kuhnts", "cvxnts", "ku nts"},
+    ["dick"]          = {"dihq", "dyxk", "di q"},
+    ["dicks"]         = {"dihqs", "dyxks", "di qs"},
+    ["dickhead"]      = {"dihqhead", "dyxkhead", "di q head"},
+    ["cock"]          = {"cohq", "coxk", "co q"},
+    ["cocks"]         = {"cohqs", "coxks", "co qs"},
+    ["pussy"]         = {"puhsy", "pvssy", "pu sy"},
+    ["pussies"]       = {"puhsies", "pvssies", "pu sies"},
+    ["nigga"]         = {"nygha", "nxggha", "ny gha"},
+    ["niggas"]        = {"nyghas", "nxgghas", "ny ghas"},
+    ["nigger"]        = {"nygher", "nxggher", "ny gher"},
+    ["niggers"]       = {"nyghers", "nxgghers", "ny ghers"},
+    ["faggot"]        = {"fahgot", "fxggot", "fa got"},
+    ["fag"]           = {"fahg", "fxg", "fa g"},
+    ["slut"]          = {"sluht", "slxt", "sl ut"},
+    ["sluts"]         = {"sluhts", "slxts", "sl uts"},
+    ["slutty"]        = {"sluhtty", "slxtty", "sl utty"},
+    ["whore"]         = {"whohre", "whxre", "who re"},
+    ["whores"]        = {"whohres", "whxres", "who res"},
+    ["hoe"]           = {"hohe", "hxe", "ho e"},
+    ["hoes"]          = {"hohes", "hxes", "ho es"},
+    ["ass"]           = {"ahss", "axss", "a ss"},
+    ["asshole"]       = {"ahsshole", "axsshole", "a sshole"},
+    ["dumbass"]       = {"dumbahss", "dumbaxss", "dumb a ss"},
+    ["badass"]        = {"badahss", "badaxss", "bad a ss"},
+    ["sex"]           = {"sehx", "sxx", "se x"},
+    ["sexy"]          = {"sehxy", "sxxy", "se xy"},
+    ["porn"]          = {"pohrn", "pxrn", "po rn"},
+    ["nude"]          = {"nuhde", "nxde", "nu de"},
+    ["nudes"]         = {"nuhdes", "nxdes", "nu des"},
+    ["naked"]         = {"nahked", "nxked", "na ked"},
+    ["horny"]         = {"hohrny", "hxrny", "hor ny"},
+    ["cum"]           = {"kuhm", "cxm", "ku m"},
+    ["cumming"]       = {"kuhmming", "cxmming", "ku mming"},
+    ["boobs"]         = {"boohbs", "bxxbs", "boo bs"},
+    ["tits"]          = {"tyts", "txts", "ti ts"},
+    ["titties"]       = {"tytties", "txtties", "ti tties"},
+    ["booty"]         = {"boohty", "bxxty", "boo ty"},
+    ["lick"]          = {"lihq", "lyxk", "li q"},
+    ["licking"]       = {"lihqing", "lyxking", "li qing"},
+    ["blowjob"]       = {"blohwjob", "blxwjob", "blow job"},
+    ["handjob"]       = {"hahndjob", "hxndjob", "hand job"},
+    ["rape"]          = {"rahpe", "rxpe", "ra pe"},
+    ["raped"]         = {"rahped", "rxped", "ra ped"},
+    ["kill"]          = {"kihll", "kxll", "ki ll"},
+    ["killed"]        = {"kihlled", "kxlled", "ki lled"},
+    ["killing"]       = {"kihlling", "kxlling", "ki lling"},
+    ["die"]           = {"dyie", "dxe", "di e"},
+    ["dying"]         = {"dyhing", "dxing", "dy ing"},
+    ["dead"]          = {"dehad", "dxad", "de ad"},
+    ["suicide"]       = {"suyicide", "sxicide", "sui cide"},
+    ["suicidal"]      = {"suyicidal", "sxicidal", "sui cidal"},
+    ["depressed"]     = {"dehpressed", "dxpressed", "de pressed"},
+    ["depression"]    = {"dehpression", "dxpression", "de pression"},
+    ["worthless"]     = {"wohrthless", "wxrthless", "worth less"},
+    ["hopeless"]      = {"hohpeless", "hxpeless", "hope less"},
+    ["boyfriend"]     = {"bohyfriend", "bxyfriend", "boy friend"},
+    ["girlfriend"]    = {"gihrlfriend", "gxrlfriend", "girl friend"},
+
+    -- ==================== KATA SLANG, FISIK & ROMANSA (ID) ====================
+    ["lengket"]       = {"lhengket", "l3ngket", "leng ket"},
+    ["melengket"]     = {"melhengket", "mel3ngket", "me lengket"},
+    ["nempel"]        = {"nhempel", "n3mpel", "nem pel"},
+    ["menempel"]      = {"menhempel", "men3mpel", "me nempel"},
+    ["gocek"]         = {"ghocek", "g0cek", "go cek"},
+    ["kegocek"]       = {"khegocek", "keg0cek", "ke gocek"},
+    ["tergocek"]      = {"terghocek", "terg0cek", "ter gocek"},
+    ["menggocek"]     = {"mengghocek", "mengg0cek", "meng gocek"},
+    ["goda"]          = {"ghoda", "g0da", "go da"},
+    ["kegoda"]        = {"khegoda", "keg0da", "ke goda"},
+    ["tergoda"]       = {"terghoda", "terg0da", "ter goda"},
+    ["menggoda"]      = {"mengghoda", "mengg0da", "meng goda"},
+    ["tipu"]          = {"tihpu", "tIpu", "ti pu"},
+    ["ketipu"]        = {"khetipu", "ketIpu", "ke tipu"},
+    ["tertipu"]       = {"tertihpu", "tertIpu", "ter tipu"},
+    ["menipu"]        = {"menihpu", "menIpu", "me nipu"},
+    ["baper"]         = {"bhaper", "b4per", "ba per"},
+    ["kebawa"]        = {"khebawa", "keb4wa", "ke bawa"},
+    ["terbawa"]       = {"terbhawa", "terb4wa", "ter bawa"},
+    ["basah"]         = {"bhasah", "b4sah", "ba sah"},
+    ["membasahi"]     = {"membhasahi", "memb4sahi", "mem basahi"},
+    ["panas"]         = {"phanas", "p4nas", "pa nas"},
+    ["memanas"]       = {"memhanas", "mem4nas", "me manas"},
+    ["lemas"]         = {"lhemas", "l3mas", "le mas"},
+    ["melemas"]       = {"melhemas", "mel3mas", "me lemas"},
+    ["tegang"]        = {"thegang", "t3gang", "te gang"},
+    ["menegang"]      = {"menhegang", "men3gang", "me negang"},
+    ["nikmat"]        = {"nihkmat", "nIkmat", "nik mat"},
+    ["menikmati"]     = {"menihkmati", "menIkmati", "me nikmati"},
+    ["kunikmati"]     = {"kunihkmati", "kunIkmati", "ku nikmati"},
+    ["puas"]          = {"phuas", "pvas", "pu as"},
+    ["memuaskan"]     = {"memhuaskan", "memvaskan", "me muaskan"},
+    ["nakal"]         = {"nhakal", "n4kal", "na kal"},
+    ["bandel"]        = {"bhandel", "b4ndel", "ban del"},
+    ["liar"]          = {"lihar", "lIar", "li ar"},
+    ["buas"]          = {"bhuas", "bvas", "bu as"},
+    ["gila"]          = {"ghila", "gIla", "gi la"},
+    ["tergila"]       = {"terghila", "tergIla", "ter gila"},
+
+    ["bayang"]        = {"bhayang", "b4yang", "ba yang"},
+    ["bayangkan"]     = {"bhayangkan", "b4yangkan", "ba yangkan"},
+    ["kubayangkan"]   = {"kuhbayangkan", "qubayangkan", "ku bayangkan"},
+    ["membayangkan"]  = {"membhayangkan", "memb4yangkan", "mem bayangkan"},
+    ["terbayang"]     = {"terbhayang", "terb4yang", "ter bayang"},
+    ["bayanganmu"]    = {"bhayanganmu", "b4yanganmu", "ba yanganmu"},
+    ["tubuh"]         = {"tuhbuh", "tvbvh", "tu buh"},
+    ["tubuhmu"]       = {"tuhbuhmu", "tvbvhmu", "tu buhmu"},
+    ["tubuhku"]       = {"tuhbuhku", "tvbvhku", "tu buhku"},
+    ["badan"]         = {"bhadan", "b4dan", "ba dan"},
+    ["badanmu"]       = {"bhadanmu", "b4danmu", "ba danmu"},
+    ["badanku"]       = {"bhadanku", "b4danku", "ba danku"},
+    ["raga"]          = {"rhaga", "r4ga", "ra ga"},
+    ["ragamu"]        = {"rhagamu", "r4gamu", "ra gamu"},
+    ["peluk"]         = {"pehluk", "p3luk", "pe luk"},
+    ["memeluk"]       = {"memehluk", "mem3luk", "me meluk"},
+    ["memelukmu"]     = {"memehlukmu", "mem3lukmu", "me melukmu"},
+    ["kupeluk"]       = {"kupehluk", "kup3luk", "ku peluk"},
+    ["dipeluk"]       = {"dipehluk", "dip3luk", "di peluk"},
+    ["pelukan"]       = {"pehlukan", "p3lukan", "pe lukan"},
+    ["pelukanmu"]     = {"pehlukanmu", "p3lukanmu", "pe lukanmu"},
+    ["pelukanku"]     = {"pehlukanku", "p3lukanku", "pe lukanku"},
+    ["dipelukanku"]   = {"dipehlukanku", "dip3lukanku", "di pelukanku"},
+    ["dekap"]         = {"dhekap", "d3kap", "de kap"},
+    ["mendekap"]      = {"mendhekap", "mend3kap", "men dekap"},
+    ["dekapan"]       = {"dhekapan", "d3kapan", "de kapan"},
+    ["dekapanku"]     = {"dhekapanku", "d3kapanku", "de kapanku"},
+    ["rangkul"]       = {"rhangkul", "r4ngkul", "rang kul"},
+    ["merangkul"]     = {"merhangkul", "mer4ngkul", "me rangkul"},
+    ["tidur"]         = {"tihdur", "tIdvr", "ti dur"},
+    ["tidurlah"]      = {"tihdurlah", "tIdvrlah", "ti durlah"},
+    ["meniduri"]      = {"menihduri", "menIdvri", "me niduri"},
+    ["kutiduri"]      = {"kutihduri", "kutIdvri", "ku tiduri"},
+    ["ketiduran"]     = {"ketihduran", "ketIdvran", "ke tiduran"},
+    ["sekasur"]       = {"sekhasur", "sek4sur", "se kasur"},
+    ["seranjang"]     = {"serhanjang", "ser4njang", "se ranjang"},
+    ["ranjang"]       = {"rhanjang", "r4njang", "ran jang"},
+    ["kasur"]         = {"khasur", "k4sur", "ka sur"},
+    ["kamar"]         = {"khamar", "k4mar", "ka mar"},
+    ["kamarmu"]       = {"khamarmu", "k4marmu", "ka marmu"},
+    ["kamarku"]       = {"khamarku", "k4marku", "ka marku"},
+    ["cium"]          = {"chium", "cIvm", "ci um"},
+    ["mencium"]       = {"menchium", "mencIvm", "men cium"},
+    ["menciummu"]     = {"menchiummu", "mencIvmmu", "men ciummu"},
+    ["kucium"]        = {"kuchium", "kucIvm", "ku cium"},
+    ["ciuman"]        = {"chiuman", "cIvman", "ci uman"},
+    ["kecup"]         = {"khecup", "k3cup", "ke cup"},
+    ["mengecup"]      = {"menghecup", "meng3cup", "me ngecup"},
+    ["sentuh"]        = {"shentuh", "s3ntvh", "sen tuh"},
+    ["menyentuh"]     = {"menyhentuh", "meny3ntvh", "me nyentuh"},
+    ["menyentuhmu"]   = {"menyhentuhmu", "meny3ntvhmu", "me nyentuhmu"},
+    ["kusentuh"]      = {"kushentuh", "kus3ntvh", "ku sentuh"},
+    ["sentuhan"]      = {"shentuhan", "s3ntvhan", "sen tuhan"},
+    ["belai"]         = {"bhelai", "b3lai", "be lai"},
+    ["membelai"]      = {"membhelai", "memb3lai", "mem belai"},
+    ["belaian"]       = {"bhelaian", "b3laian", "be laian"},
+    ["raba"]          = {"rhaba", "r4ba", "ra ba"},
+    ["meraba"]        = {"merhaba", "mer4ba", "me raba"},
+    ["pangku"]        = {"phangku", "p4ngku", "pang ku"},
+    ["memangku"]      = {"memhangku", "mem4ngku", "me mangku"},
+    ["pangkuan"]      = {"phangkuan", "p4ngkuan", "pang kuan"},
+    ["pangkuanku"]    = {"phangkuanku", "p4ngkuanku", "pang kuanku"},
+    ["bibir"]         = {"bihbir", "bIbir", "bi bir"},
+    ["bibirmu"]       = {"bihbirmu", "bIbirmu", "bi birmu"},
+    ["bibirku"]       = {"bihbirku", "bIbirku", "bi birku"},
+    ["lidah"]         = {"lihdah", "lIdah", "li dah"},
+    ["leher"]         = {"lheher", "l3her", "le her"},
+    ["lehermu"]       = {"lhehermu", "l3hermu", "le hermu"},
+    ["dada"]          = {"dhada", "d4da", "da da"},
+    ["dadamu"]        = {"dhadamu", "d4damu", "da damu"},
+    ["dadaku"]        = {"dhadaku", "d4daku", "da daku"},
+    ["paha"]          = {"phaha", "p4ha", "pa ha"},
+    ["pahamu"]        = {"phahamu", "p4hamu", "pa hamu"},
+    ["kulit"]         = {"kuhlit", "kvlIt", "ku lit"},
+    ["kulitmu"]       = {"kuhlitmu", "kvlItmu", "ku litmu"},
+    ["desah"]         = {"dhesah", "d3sah", "de sah"},
+    ["mendesah"]      = {"mendhesah", "mend3sah", "men desah"},
+    ["desahan"]       = {"dhesahan", "d3sahan", "de sahan"},
+    ["keringat"]      = {"kheringat", "kerIngat", "ke ringat"},
+    ["bercinta"]      = {"berchinta", "bercInta", "ber cinta"},
+    ["cinta"]         = {"chinta", "cInta", "cin ta"},
+    ["cintaku"]       = {"chintaku", "cIntaku", "cin taku"},
+    ["cintamu"]       = {"chintamu", "cIntamu", "cin tamu"},
+    ["mencintai"]     = {"menchintai", "mencIntai", "men cintai"},
+    ["mencintaimu"]   = {"menchintaimu", "mencIntaimu", "men cintaimu"},
+    ["sayang"]        = {"shayang", "s4yang", "sa yang"},
+    ["sayangku"]      = {"shayangku", "s4yangku", "sa yangku"},
+    ["sayangmu"]      = {"shayangmu", "s4yangmu", "sa yangmu"},
+    ["menyayangi"]    = {"menyhayangi", "meny4yangi", "me nyayangi"},
+    ["menyayangimu"]  = {"menyhayangimu", "meny4yangimu", "me nyayangimu"},
+    ["memudar"]       = {"memuhdar", "memvdar", "me mudar"},
+    ["memnudar"]      = {"memnuhdar", "memnvdar", "mem nudar"},
+    ["remang"]        = {"rhemanq", "r3mang", "re mang"},
+    ["sunyi"]         = {"suhnyi", "svnyi", "su nyi"},
+    ["hampa"]         = {"hampah", "h4mpa", "ham pa"},
+
+    -- Kata Pemicu Konteks Emosi & Tindakan Antar-Pemain
+    ["lakukan"]       = {"lahkukan", "l4kukan", "la kukan"},
+    ["kulakukan"]     = {"kulahkukan", "kul4kukan", "ku lakukan"},
+    ["melakukan"]     = {"melahkukan", "mel4kukan", "me lakukan"},
+    ["dilakukan"]     = {"dilahkukan", "dil4kukan", "di lakukan"},
+    ["perbuat"]       = {"perbhuat", "p3rbuat", "per buat"},
+    ["marah"]         = {"mharah", "m4rah", "ma rah"},
+    ["marahi"]        = {"mharahi", "m4rahi", "ma rahi"},
+    ["memarahi"]      = {"memharahi", "mem4rahi", "me marahi"},
+    ["kemarahan"]     = {"kemharahan", "kem4rahan", "ke marahan"},
+    ["emosi"]         = {"ehmosi", "3mosi", "e mosi"},
+    ["kesal"]         = {"khesal", "k3sal", "ke sal"},
+    ["murka"]         = {"muhrka", "mvrka", "mur ka"},
+    ["amuk"]          = {"ahmuk", "4muk", "a muk"},
+    ["mengamuk"]      = {"mengahmuk", "meng4muk", "me ngamuk"},
+    ["benci"]         = {"bhenci", "b3nci", "ben ci"},
+    ["membenci"]      = {"membhenci", "memb3nci", "mem benci"},
+    ["kubenci"]       = {"kubhenci", "kub3nci", "ku benci"},
+    ["dendam"]        = {"dhendam", "d3ndam", "den dam"},
+    ["kecewa"]        = {"khecewa", "k3cewa", "ke cewa"},
+    ["sakiti"]        = {"sahkiti", "s4kiti", "sa kiti"},
+    ["menyakiti"]     = {"menyahkiti", "meny4kiti", "me nyakiti"},
+    ["menyakitimu"]   = {"menyahkitimu", "meny4kitimu", "me nyakitimu"},
+    ["kusakiti"]      = {"kusahkiti", "kus4kiti", "ku sakiti"},
+    ["tersakiti"]     = {"tersahkiti", "ters4kiti", "ter sakiti"},
+    ["lukai"]         = {"luhkai", "lvkai", "lu kai"},
+    ["melukai"]       = {"meluhkai", "melvkai", "me lukai"},
+    ["melukaimu"]     = {"meluhkaimu", "melvkaimu", "me lukaimu"},
+    ["teriak"]        = {"theriak", "t3riak", "te riak"},
+    ["berteriak"]     = {"bertheriak", "bert3riak", "ber teriak"},
+    ["bentak"]        = {"bhentak", "b3ntak", "ben tak"},
+    ["membentak"]     = {"membhentak", "memb3ntak", "mem bentak"},
+    ["tampar"]        = {"thampar", "t4mpar", "tam par"},
+    ["menampar"]      = {"menhampar", "men4mpar", "me nampar"},
+    ["pukul"]         = {"puhkul", "pvkul", "pu kul"},
+    ["memukul"]       = {"memuhkul", "memvkul", "me mukul"},
+    ["hajar"]         = {"hhajar", "h4jar", "ha jar"},
+    ["menghajar"]     = {"menghhajar", "mengh4jar", "meng hajar"},
+    ["tendang"]       = {"thendang", "t3ndang", "ten dang"},
+    ["dorong"]        = {"dhorong", "d0rong", "do rong"},
+    ["mendorong"]     = {"mendhorong", "mend0rong", "men dorong"},
+    ["paksa"]         = {"phaksa", "p4ksa", "pak sa"},
+    ["memaksa"]       = {"memhaksa", "mem4ksa", "me maksa"},
+    ["bohong"]        = {"bhohong", "b0hong", "bo hong"},
+    ["bohongi"]       = {"bhohongi", "b0hongi", "bo hongi"},
+    ["membohongi"]    = {"membhohongi", "memb0hongi", "mem bohongi"},
+    ["khianat"]       = {"khihanat", "khIanat", "khi anat"},
+    ["khianati"]      = {"khihanati", "khIanati", "khi anati"},
+    ["mengkhianati"]  = {"mengkhihanati", "mengkhIanati", "meng khianati"},
+    ["tinggalkan"]    = {"tihnggalkan", "tInggalkan", "ting galkan"},
+    ["meninggalkan"]  = {"menihnggalkan", "menInggalkan", "me ninggalkan"},
+    ["kutinggalkan"]  = {"kutihnggalkan", "kutInggalkan", "ku tinggalkan"},
 
     -- Kata Tier-1 Kasar & Vulgar Indonesia
-    ["kontol"]        = {"kontool", "k0ntol", "kon tol"},
-    ["memek"]         = {"memeek", "m3mek", "me mek"},
-    ["jembut"]        = {"jembuut", "j3mbut", "jem but"},
-    ["ngentot"]       = {"ngentoot", "ng3ntot", "ngen tot"},
-    ["ngewe"]         = {"ngeewe", "ng3we", "nge we"},
-    ["pepek"]         = {"pepeek", "p3pek", "pe pek"},
-    ["tetek"]         = {"teteek", "t3tek", "te tek"},
-    ["toket"]         = {"tokeet", "t0ket", "to ket"},
-    ["lonte"]         = {"lontee", "l0nte", "lon te"},
-    ["anjing"]        = {"anjiing", "anjIng", "an jing"},
-    ["anjir"]         = {"anjiir", "anjIr", "an jir"},
-    ["bangsat"]       = {"bangsaat", "b4ngsat", "bang sat"},
-    ["brengsek"]      = {"brengseek", "br3ngsek", "breng sek"},
-    ["bajingan"]      = {"bajiingan", "b4jingan", "ba jingan"},
-    ["goblok"]        = {"goblook", "g0blok", "gob lok"},
-    ["tolol"]         = {"tolool", "t0lol", "to lol"},
-    ["jancok"]        = {"jancook", "j4ncok", "jan cok"},
-    ["jancuk"]        = {"jancuuk", "j4ncuk", "jan cuk"},
-    ["pantek"]        = {"panteek", "p4ntek", "pan tek"},
-    ["puki"]          = {"pukii", "pukI", "pu ki"},
-    ["pukimak"]       = {"pukiimak", "pukImak", "puki mak"},
-    ["sange"]         = {"sangee", "s4nge", "sa nge"},
-    ["bokep"]         = {"bokeep", "b0kep", "bo kep"},
-    ["bunuh"]         = {"bunuuh", "bvnuh", "bu nuh"},
-    ["membunuh"]      = {"membunuuh", "membvnuh", "mem bunuh"},
-    ["mati"]          = {"matii", "m4ti", "ma ti"}
+    ["kontol"]        = {"kohnthol", "kxntol", "kon tol"},
+    ["memek"]         = {"mhemhek", "mxmek", "me mek"},
+    ["jembut"]        = {"jhembhut", "jxmbut", "jem but"},
+    ["ngentot"]       = {"nghenthot", "ngxntot", "ngen tot"},
+    ["ngewe"]         = {"nghewhe", "ngxwe", "nge we"},
+    ["pepek"]         = {"phephek", "pxpek", "pe pek"},
+    ["tetek"]         = {"thethek", "txtek", "te tek"},
+    ["toket"]         = {"thokhet", "txket", "to ket"},
+    ["lonte"]         = {"lhonhte", "lxnte", "lon te"},
+    ["anjing"]        = {"ahnjhing", "axnjing", "an jing"},
+    ["anjir"]         = {"ahnjhir", "axnjir", "an jir"},
+    ["bangsat"]       = {"bahngshat", "bxngsat", "bang sat"},
+    ["brengsek"]      = {"brehngshek", "brxngsek", "breng sek"},
+    ["bajingan"]      = {"bahjinghan", "bxjingan", "ba jingan"},
+    ["goblok"]        = {"gohblohq", "gxblok", "gob lok"},
+    ["tolol"]         = {"tohlohl", "txlol", "to lol"},
+    ["jancok"]        = {"jahncohq", "jxncok", "jan cok"},
+    ["jancuk"]        = {"jahncuhq", "jxncuk", "jan cuk"},
+    ["pantek"]        = {"pahnthek", "pxntek", "pan tek"},
+    ["puki"]          = {"puhkhi", "pxki", "pu ki"},
+    ["pukimak"]       = {"puhkhimak", "pxkimak", "puki mak"},
+    ["sange"]         = {"sahnghe", "sxnge", "sa nge"},
+    ["bokep"]         = {"bohkeps", "bxkep", "bo kep"},
+    ["bunuh"]         = {"buhnuh", "bvnuh", "bu nuh"},
+    ["membunuh"]      = {"membuhnuh", "membvnuh", "mem bunuh"},
+    ["mati"]          = {"mahti", "m4ti", "ma ti"},
+    ["isap"]          = {"ihsap", "Isap", "i sap"},
+    ["mengisap"]      = {"mengihsap", "mengIsap", "meng isap"},
+    ["hisap"]         = {"hihsap", "hIsap", "hi sap"},
+    ["menghisap"]     = {"menghihsap", "menghIsap", "meng hisap"},
+    ["jilat"]         = {"jihlat", "jIlat", "ji lat"},
+    ["menjilat"]      = {"menjihlat", "menjIlat", "men jilat"},
+    ["emut"]          = {"ehmut", "3mut", "e mut"},
+    ["mengemut"]      = {"mengehmut", "meng3mut", "meng emut"}
 }
 
--- Daftar kata sensitif umum & pemicu konteks lainnya
 local strictBadWords = {
+    "dengar", "dengarkan", "ingin", "kuingin", "inginkan", "kuinginkan", "menginginkan",
+    "jadi", "menjadi", "pasangan", "pasanganku", "pasanganmu", "jodoh", "jodohku", "jodohmu",
+    "lengket", "melengket", "nempel", "menempel", "gocek", "kegocek", "tergocek", "menggocek",
+    "goda", "kegoda", "tergoda", "menggoda", "ketipu", "tertipu", "baper", "kebawa", "terbawa",
+    "basah", "membasahi", "panas", "memanas", "lemas", "melemas", "tegang", "menegang",
+    "nikmat", "menikmati", "kunikmati", "puas", "memuaskan", "nakal", "bandel", "liar", "buas",
+
     "lakukan", "kulakukan", "melakukan", "perbuat", "marah", "marahi", "memarahi",
     "kemarahan", "emosi", "kesal", "murka", "amuk", "mengamuk", "benci", "membenci",
     "kubenci", "dendam", "kecewa", "sakiti", "menyakiti", "menyakitimu", "kusakiti",
@@ -302,13 +405,14 @@ local strictBadWords = {
     "bibir", "bibirmu", "bibirku", "lidah", "lidahmu", "leher", "lehermu",
     "dada", "dadamu", "dadaku", "paha", "pahamu", "pinggul", "pinggulmu",
     "kulit", "kulitmu", "keringat", "desah", "mendesah", "desahan",
-    "peluk", "memeluk", "memelukmu", "kupeluk", "pelukan", "pelukanmu",
-    "dekap", "mendekap", "dekapan", "rangkul", "merangkul",
+    "peluk", "memeluk", "memelukmu", "kupeluk", "dipeluk", "pelukan", "pelukanmu", "pelukanku", "dipelukanku",
+    "dekap", "mendekap", "dekapan", "dekapanku", "rangkul", "merangkul",
     "cium", "mencium", "menciummu", "kucium", "ciuman", "kecup", "mengecup",
     "sentuh", "menyentuh", "menyentuhmu", "kusentuh", "sentuhan",
-    "belai", "membelai", "raba", "meraba", "pangku", "memangku",
+    "belai", "membelai", "belaian", "raba", "meraba", "pangku", "memangku", "pangkuan",
     "bercinta", "cinta", "cintaku", "cintamu", "mencintai", "mencintaimu",
-    "pacar", "pacarku", "pacarmu", "pacaran", "kekasih", "kekasihku", "kekasihmu",
+    "sayang", "sayangku", "sayangmu", "menyayangi", "menyayangimu",
+    "pacar", "pacarku", "pacarmu", "pacaran", "berpacaran", "kekasih", "kekasihku", "kekasihmu",
     "nikah", "menikah", "menikahimu", "suami", "istri", "selingkuh", "pelakor",
     "telanjang", "bugil", "seksi", "montok", "bohay", "semok", "bahenol",
     "kutang", "bh", "cangcut", "sempak", "kolor", "daleman",
@@ -331,7 +435,8 @@ local strictBadWords = {
     "kemaluan", "zakar", "vagina", "penis", "testis", "peler", "pler", "titit",
     "ngentot", "entot", "ngewe", "ewe", "kenthu", "peju", "mani", "sperma", "crot",
     "ejakulasi", "ereksi", "ngaceng", "coli", "colmek", "onani", "masturbasi",
-    "sodomi", "sepong", "nyepong", "sange", "horni", "birahi", "syahwat", "perawan",
+    "sodomi", "sepong", "nyepong", "isap", "mengisap", "hisap", "menghisap", "jilat",
+    "menjilat", "emut", "mengemut", "sange", "horni", "birahi", "syahwat", "perawan",
     "seks", "seksual", "bokep", "mesum", "cabul", "perkosa", "memperkosa", "pedofil",
 
     "bunuh", "membunuh", "pembunuh", "bantai", "membantai", "cekik", "tikam",
@@ -354,31 +459,34 @@ local strictBadWords = {
     "faggot", "faggots", "fag", "fags", "dyke", "tranny", "retard", "retarded",
     "killing", "killed", "killer", "kills", "kill", "murder", "murdered", "murderer",
     "dying", "died", "die", "dead", "death", "corpse", "bleeding", "bleed", "blood",
-    "stab", "stabbed", "choke", "shoot", "shooting", "shotgun", "gun", "guns", "pistol",
-    "rifle", "bullet", "bomb", "terrorist", "torture", "abuse", "rape", "raped", "rapist",
-    "molest", "pedo", "pedophile", "incest", "sexual", "sexually", "sex", "sexy",
-    "porn", "porno", "hentai", "nsfw", "nude", "nudes", "naked", "horny", "orgasm",
-    "cum", "cumming", "sperm", "boobs", "boob", "titties", "tits", "breast", "breasts",
-    "nipple", "nipples", "booty", "butt", "anus", "penis", "vagina", "clit", "dildo",
-    "blowjob", "handjob", "anal", "oral", "virgin", "lust", "fetish", "bdsm", "kinky",
-    "drugs", "drug", "weed", "marijuana", "cannabis", "cocaine", "coke", "heroin",
-    "meth", "ecstasy", "molly", "lsd", "pills", "vape", "drunk", "wasted", "whiskey",
-    "vodka", "beer", "wine", "kiss", "kissing", "kissed", "lips", "tongue", "thighs",
-    "undress", "underwear", "bra", "panties", "bikini", "bed", "bedroom", "boyfriend",
-    "girlfriend", "lover", "dating", "marry", "husband", "wife", "daddy", "mommy",
-    "discord", "tiktok", "instagram", "whatsapp", "telegram", "youtube", "twitter",
-    "facebook", "snapchat", "tinder", "onlyfans", "spotify", "sleep", "sleeping",
-    "angry", "mad", "hate", "hating", "hurt", "hurting", "pain", "cry", "crying"
+    "stab", "stabbed", "choke", "choking", "shoot", "shooting", "shotgun", "gun",
+    "guns", "pistol", "rifle", "bullet", "bomb", "terrorist", "torture", "abuse",
+    "rape", "raped", "rapist", "molest", "pedo", "pedophile", "incest", "sexual",
+    "sexually", "sex", "sexy", "porn", "porno", "hentai", "nsfw", "nude", "nudes",
+    "naked", "horny", "orgasm", "cum", "cumming", "sperm", "boobs", "boob", "titties",
+    "tits", "breast", "breasts", "nipple", "nipples", "booty", "butt", "anus", "penis",
+    "vagina", "clit", "dildo", "suck", "sucks", "sucking", "sucked", "sucker", "lick",
+    "licks", "licking", "licked", "blow", "blowing", "blowjob", "handjob", "footjob",
+    "swallow", "bite", "biting", "anal", "oral", "virgin", "lust", "fetish", "bdsm",
+    "kinky", "drugs", "drug", "weed", "marijuana", "cannabis", "cocaine", "coke",
+    "heroin", "meth", "ecstasy", "molly", "lsd", "pills", "vape", "drunk", "wasted",
+    "whiskey", "vodka", "beer", "wine", "kiss", "kissing", "kissed", "lips", "tongue",
+    "thighs", "undress", "underwear", "bra", "panties", "bikini", "bed", "bedroom",
+    "boyfriend", "girlfriend", "lover", "dating", "marry", "husband", "wife", "daddy",
+    "mommy", "discord", "tiktok", "instagram", "whatsapp", "telegram", "youtube",
+    "twitter", "facebook", "snapchat", "tinder", "onlyfans", "spotify", "sleep",
+    "sleeping", "angry", "mad", "hate", "hating", "hurt", "hurting", "pain", "cry", "crying"
 }
 
 local hardSubstrings = {
     "fuck", "fck", "fuk", "shit", "bitch", "cunt", "dick", "cock", "puss", "nigg",
-    "fag", "slut", "whor", "rape", "pedo", "porn", "nude", "sex", "suicid", "depres",
-    "kontol", "kntl", "memek", "pepek", "jembut", "jmbt", "ngentot", "ngewe",
-    "tetek", "toket", "lonte", "pelacur", "bokep", "mesum", "cabul", "perkosa",
-    "anjing", "anjir", "bangsat", "brengsek", "bajingan", "goblok", "tolol",
-    "jancok", "jancuk", "pantek", "kimak", "puki", "sange", "tubuh", "tidur",
-    "bayang", "marah", "benci", "sakit", "luka"
+    "fag", "slut", "whor", "rape", "pedo", "porn", "nude", "sex", "suck", "lick",
+    "blowjob", "handjob", "suicid", "depres", "kontol", "kntl", "memek", "pepek",
+    "jembut", "jmbt", "ngentot", "ngewe", "tetek", "toket", "lonte", "pelacur",
+    "bokep", "mesum", "cabul", "perkosa", "anjing", "anjir", "bangsat", "brengsek",
+    "bajingan", "goblok", "tolol", "jancok", "jancuk", "pantek", "kimak", "puki",
+    "sange", "tubuh", "tidur", "bayang", "peluk", "cium", "sentuh", "marah", "benci",
+    "sakit", "luka", "lengket", "gocek", "nempel", "goda", "pacar", "kekasih", "cinta", "sayang"
 }
 
 local wordLookup = {}
@@ -396,15 +504,19 @@ local function matchCase(original, replacement)
     return replacement
 end
 
-local function doubleLastVowel(word)
-    for i = #word, 1, -1 do
+local function insertSoftHBridge(word)
+    if word:lower():sub(-2) == "ck" then
+        return word:sub(1, #word - 2) .. "hq"
+    end
+    for i = 1, #word - 1 do
         local ch = word:sub(i, i)
-        if ch:match("[aiueoAIUEO]") then
-            return word:sub(1, i) .. ch:lower() .. word:sub(i + 1)
+        local nextCh = word:sub(i + 1, i + 1):lower()
+        if ch:match("[aiueoAIUEO]") and nextCh ~= "h" then
+            return word:sub(1, i) .. "h" .. word:sub(i + 1)
         end
     end
     local mid = math.max(1, math.floor(#word / 2))
-    return word:sub(1, mid) .. "u" .. word:sub(mid + 1)
+    return word:sub(1, mid) .. "h" .. word:sub(mid + 1)
 end
 
 local function bypassWord(word)
@@ -417,12 +529,27 @@ local function bypassWord(word)
     end
 
     if lower:find("fuck", 1, true) then
-        local rep = (mode == 1 and "fuvck") or (mode == 2 and "fvck") or "fu ck"
+        local rep = (mode == 1 and "fuhq") or (mode == 2 and "phuxk") or "fu q"
         return word:gsub("[fF][uU][cC][kK]", function(m) return matchCase(m, rep) end)
     end
 
+    if lower:find("suck", 1, true) then
+        local rep = (mode == 1 and "suhq") or (mode == 2 and "suxk") or "su q"
+        return word:gsub("[sS][uU][cC][kK]", function(m) return matchCase(m, rep) end)
+    end
+
+    if lower:find("shit", 1, true) then
+        local rep = (mode == 1 and "shyt") or (mode == 2 and "shxt") or "sh yt"
+        return word:gsub("[sS][hH][iI][tT]", function(m) return matchCase(m, rep) end)
+    end
+
+    if lower:find("bitch", 1, true) then
+        local rep = (mode == 1 and "bych") or (mode == 2 and "bxtch") or "bi ch"
+        return word:gsub("[bB][iI][tT][cC][hH]", function(m) return matchCase(m, rep) end)
+    end
+
     if mode == 1 then
-        return doubleLastVowel(word)
+        return insertSoftHBridge(word)
     elseif mode == 2 then
         local leet = {["u"]="v", ["i"]="I", ["l"]="I", ["e"]="3", ["o"]="0", ["a"]="4"}
         local replaced = false
@@ -434,7 +561,7 @@ local function bypassWord(word)
             return c
         end)
         if replaced then return res end
-        return doubleLastVowel(word)
+        return insertSoftHBridge(word)
     else
         local mid = math.max(2, math.floor(#word / 2))
         return word:sub(1, mid) .. " " .. word:sub(mid + 1)
@@ -445,7 +572,10 @@ local function isBadWord(word)
     local lowerWord = word:lower():gsub("'", "")
     if directBypassMap[lowerWord] or wordLookup[lowerWord] then return true end
 
-    local suffixes = {"nya", "mu", "ku", "lah", "kan", "an", "in", "ing", "ed", "es", "s"}
+    local suffixes = {
+        "kanku", "kanmu", "kannya", "anku", "anmu", "annya",
+        "nya", "mu", "ku", "lah", "kan", "an", "in", "i", "ing", "ed", "er", "ers", "es", "s"
+    }
     for _, suf in ipairs(suffixes) do
         if #lowerWord > #suf + 2 and lowerWord:sub(-#suf) == suf then
             local stem = lowerWord:sub(1, #lowerWord - #suf)
@@ -453,7 +583,7 @@ local function isBadWord(word)
         end
     end
 
-    local prefixes = {"ku", "kau", "di", "me", "mem", "men", "meng", "meny", "ter", "ber", "se"}
+    local prefixes = {"dipe", "kupe", "me", "mem", "men", "meng", "meny", "di", "ku", "kau", "ke", "ter", "ber", "se", "pe", "un", "re"}
     for _, pre in ipairs(prefixes) do
         if #lowerWord > #pre + 2 and lowerWord:sub(1, #pre) == pre then
             local stem = lowerWord:sub(#pre + 1)
@@ -479,6 +609,18 @@ end
 function FilterModule.Sanitize(text, enabled)
     if not text or text == "" or enabled == false then return text end
 
+    local lowerFull = text:lower()
+    -- Deteksi konteks relasi/orang pertama & kedua (termasuk "aku", "ku", dan akhiran "-mu")
+    local hasPronounContext = lowerFull:find("kamu", 1, true)
+        or lowerFull:find("aku", 1, true)
+        or lowerFull:find("%f[%a]ku%f[%A]")
+        or lowerFull:find("%f[%a]kau%f[%A]")
+        or lowerFull:find("dirimu", 1, true)
+        or lowerFull:find("diriku", 1, true)
+        or lowerFull:find("mu%f[%A]")
+        or lowerFull:find("%f[%a]you%f[%A]")
+        or lowerFull:find("your", 1, true)
+
     local cleaned = text:gsub("([%a'*%-]+)", function(word)
         if word:find("%*") then
             return bypassWord(word:gsub("%*", "u"))
@@ -498,23 +640,23 @@ function FilterModule.Sanitize(text, enabled)
             return bypassWord(word)
         end
 
+        if hasPronounContext and #word >= 5 then
+            local lw = word:lower()
+            local safeConnectors = {
+                ["karena"]=true, ["tetapi"]=true, ["namun"]=true, ["ketika"]=true,
+                ["adalah"]=true, ["seperti"]=true, ["dengan"]=true, ["dalam"]=true,
+                ["untuk"]=true, ["bukan"]=true, ["tidak"]=true, ["masih"]=true,
+                ["sudah"]=true, ["belum"]=true, ["selalu"]=true, ["pernah"]=true,
+                ["where"]=true, ["there"]=true, ["their"]=true, ["would"]=true,
+                ["could"]=true, ["should"]=true, ["about"]=true, ["after"]=true
+            }
+            if not safeConnectors[lw] then
+                return bypassWord(word)
+            end
+        end
+
         return word
     end)
-
-    -- Pemecah Konteks Kalimat Otomatis:
-    -- Jika ada kalimat panjang (> 3 kata) yang mengandung kata "kau" atau "kamu" tapi belum ada kata yang di-bypass,
-    -- gandakan vokal pada kata terakhir kalimat agar rantai konteks AI Roblox terputus.
-    if cleaned == text then
-        local lowerFull = text:lower()
-        if lowerFull:find("%f[%a]kau%f[%A]") or lowerFull:find("%f[%a]kamu%f[%A]") or lowerFull:find("%f[%a]aku%f[%A]") or lowerFull:find("%f[%a]you%f[%A]") then
-            cleaned = text:gsub("([%a]+)(%s*)$", function(lastWord, trailing)
-                if #lastWord >= 4 then
-                    return doubleLastVowel(lastWord) .. trailing
-                end
-                return lastWord .. trailing
-            end)
-        end
-    end
 
     cleaned = cleaned:gsub("(%d)(%d)", "%1 %2"):gsub("(%d)(%d)", "%1 %2")
     return cleaned
