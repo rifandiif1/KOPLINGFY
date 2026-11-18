@@ -7,7 +7,7 @@ local FilterModule = {}
 -- 1 = Latin-1 Accent Vowel (Resmi didukung chat Eropa Roblox: "fùck", "shìt", "tùbuhmu", "jémbut")
 -- 2 = Visual Leetspeak / Consonant Mask (Murni A-Z: "fvck", "shlt", "bItch", "jexmbut")
 -- 3 = Spasi Suku Kata Mikro (Memecah kata Tier-1 menjadi "fu ck", "je mbut")
-FilterModule.BypassMode = 1
+FilterModule.BypassMode = 2
 
 -- Peta Vokal Aksentuasi Eropa Barat (Latin-1 Supplement - Legal di TextChatService Roblox)
 local accentVowelMap = {
