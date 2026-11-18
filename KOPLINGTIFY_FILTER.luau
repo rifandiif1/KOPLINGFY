@@ -1,17 +1,98 @@
 -- =================================================================================
--- KOPLINGTIFY LITE v2.5 - PURE ASCII SAFE BYPASS FILTER (KOPLINGTIFY_FILTER.luau)
+-- KOPLINGTIFY LITE v2.5 - TIER-1 ANTI-STRIP BYPASS FILTER (KOPLINGTIFY_FILTER.luau)
 -- =================================================================================
 local FilterModule = {}
 
--- Pilihan Mode Bypass (100% ASCII Murni - Tanpa Unicode/Zero-Width yang memicu sensor Roblox):
--- 1 = Halus / Mirip Asli (Ubah 'l' -> 'I', atau sisipkan 1 apostrof tipis ' di tengah kata: "tub'uhmu")
--- 2 = Strip Suku Kata Tunggal (Contoh: "tu-buhmu", "je-mbut")
--- 3 = Titik / Pagar Tunggal (Contoh: "tu.buhmu", "je.mbut")
+-- Pilihan Mode Bypass:
+-- 1 = Latin-1 Accent Vowel (Resmi didukung chat Eropa Roblox: "fùck", "shìt", "tùbuhmu", "jémbut")
+-- 2 = Visual Leetspeak / Consonant Mask (Murni A-Z: "fvck", "shlt", "bItch", "jexmbut")
+-- 3 = Spasi Suku Kata Mikro (Memecah kata Tier-1 menjadi "fu ck", "je mbut")
 FilterModule.BypassMode = 1
 
--- HANYA kata yang benar-benar disensor oleh Roblox (Kata aman tidak dimasukkan agar tidak kena false-positive)
+-- Peta Vokal Aksentuasi Eropa Barat (Latin-1 Supplement - Legal di TextChatService Roblox)
+local accentVowelMap = {
+    ["a"] = "à",
+    ["e"] = "é",
+    ["i"] = "ì",
+    ["o"] = "ò",
+    ["u"] = "ù",
+    ["A"] = "À",
+    ["E"] = "É",
+    ["I"] = "Ì",
+    ["O"] = "Ò",
+    ["U"] = "Ù"
+}
+
+-- Kamus Bypass Spesifik untuk Kata Tier-1 (Karena tanda titik/petik pasti dihapus oleh Roblox)
+local tier1DirectBypass = {
+    -- Mode 1 (Accent), Mode 2 (Leet ASCII), Mode 3 (Split)
+    ["fuck"]         = {"fùck", "fvck", "fu ck"},
+    ["fucks"]        = {"fùcks", "fvcks", "fu cks"},
+    ["fucking"]      = {"fùcking", "fvcking", "fu cking"},
+    ["fuckin"]       = {"fùckin", "fvckin", "fu ckin"},
+    ["fucked"]       = {"fùcked", "fvcked", "fu cked"},
+    ["fucker"]       = {"fùcker", "fvcker", "fu cker"},
+    ["fuckers"]      = {"fùckers", "fvckers", "fu ckers"},
+    ["motherfucker"] = {"mòtherfùcker", "motherfvcker", "mother fu cker"},
+    ["motherfucking"]= {"mòtherfùcking", "motherfvcking", "mother fu cking"},
+    ["shit"]         = {"shìt", "shlt", "sh it"},
+    ["shits"]        = {"shìts", "shlts", "sh its"},
+    ["shitting"]     = {"shìtting", "shltting", "sh itting"},
+    ["shitty"]       = {"shìtty", "shltty", "sh itty"},
+    ["bullshit"]     = {"bùllshìt", "bullshlt", "bull sh it"},
+    ["bitch"]        = {"bìtch", "bItch", "bi tch"},
+    ["bitches"]      = {"bìtches", "bItches", "bi tches"},
+    ["bitching"]     = {"bìtching", "bItching", "bi tching"},
+    ["cunt"]         = {"cùnt", "cvnt", "cu nt"},
+    ["dick"]         = {"dìck", "dIck", "di ck"},
+    ["dicks"]        = {"dìcks", "dIcks", "di cks"},
+    ["cock"]         = {"còck", "c0ck", "co ck"},
+    ["pussy"]        = {"pùssy", "pvssy", "pu ssy"},
+    ["nigga"]        = {"nìgga", "nIgga", "ni gga"},
+    ["niggas"]       = {"nìggas", "nIggas", "ni ggas"},
+    ["nigger"]       = {"nìgger", "nIgger", "ni gger"},
+    ["slut"]         = {"slùt", "sIut", "sl ut"},
+    ["whore"]        = {"whòre", "wh0re", "wh ore"},
+    ["sex"]          = {"séx", "s3x", "s ex"},
+    ["sexy"]         = {"séxy", "s3xy", "se xy"},
+    ["porn"]         = {"pòrn", "p0rn", "po rn"},
+    ["nude"]         = {"nùde", "nvde", "nu de"},
+    ["nudes"]        = {"nùdes", "nvdes", "nu des"},
+    ["rape"]         = {"ràpe", "r4pe", "ra pe"},
+    ["kill"]         = {"kìll", "kIll", "ki ll"},
+    ["suicide"]      = {"suìcìde", "suIcIde", "sui cide"},
+    ["suicidal"]     = {"suìcìdal", "suIcIdal", "sui cidal"},
+    ["depressed"]    = {"dépréssed", "depr3ssed", "de pressed"},
+    ["depression"]   = {"dépréssion", "depr3ssion", "de pression"},
+    -- Tier-1 Indonesia
+    ["kontol"]       = {"kòntol", "k0ntol", "kon tol"},
+    ["memek"]        = {"mémék", "m3mek", "me mek"},
+    ["jembut"]       = {"jémbùt", "j3mbut", "jem but"},
+    ["ngentot"]      = {"ngéntòt", "ng3ntot", "ngen tot"},
+    ["ngewe"]        = {"ngéwé", "ng3we", "nge we"},
+    ["pepek"]        = {"pépék", "p3pek", "pe pek"},
+    ["tetek"]        = {"téték", "t3tek", "te tek"},
+    ["toket"]        = {"tòkét", "t0ket", "to ket"},
+    ["lonte"]        = {"lònté", "l0nte", "lon te"},
+    ["anjing"]       = {"ànjìng", "anjIng", "an jing"},
+    ["anjir"]        = {"ànjìr", "anjIr", "an jir"},
+    ["bangsat"]      = {"bàngsat", "b4ngsat", "bang sat"},
+    ["goblok"]       = {"gòblòk", "g0blok", "gob lok"},
+    ["tolol"]        = {"tòlòl", "t0lol", "to lol"},
+    ["jancok"]       = {"jàncòk", "j4ncok", "jan cok"},
+    ["jancuk"]       = {"jàncùk", "j4ncuk", "jan cuk"},
+    ["pantek"]       = {"pànték", "p4ntek", "pan tek"},
+    ["puki"]         = {"pùkì", "pukI", "pu ki"},
+    ["pukimak"]      = {"pùkìmàk", "pukImak", "puki mak"},
+    ["tubuh"]        = {"tùbùh", "tvbuh", "tu buh"},
+    ["tubuhmu"]      = {"tùbùhmu", "tvbuhmu", "tu buhmu"},
+    ["tubuhku"]      = {"tùbùhku", "tvbuhku", "tu buhku"},
+    ["memudar"]      = {"mémùdar", "memvdar", "me mudar"},
+    ["memnudar"]     = {"mémnùdar", "memnvdar", "mem nudar"}
+}
+
+-- Daftar kata sensitif yang perlu di-bypass (Kata sehari-hari yang aman TIDAK dimasukkan)
 local strictBadWords = {
-    -- Anatomi & Romansa Intim yang Sering Diblokir Roblox
     "tubuh", "tubuhmu", "tubuhku", "badanmu", "ragamu", "bibirmu", "bibirku",
     "lidah", "lidahmu", "lehermu", "dada", "dadamu", "dadaku", "paha", "pahamu",
     "pinggul", "pinggulmu", "kulitmu", "keringat", "desah", "mendesah", "desahan",
@@ -19,13 +100,11 @@ local strictBadWords = {
     "cium", "mencium", "menciummu", "kucium", "ciuman", "kecup", "mengecup",
     "sentuh", "menyentuh", "menyentuhmu", "kusentuh", "sentuhan",
     "belai", "membelai", "raba", "meraba", "pangku", "memangku",
-    "bercinta", "ercinta", "meniduri", "kutiduri", "ranjang", "di atas ranjang",
-    "pacar", "pacarku", "pacarmu", "pacaran", "kekasih", "kekasihku", "kekasihmu",
-    "nikah", "menikah", "menikahimu", "suami", "istri", "selingkuh", "pelakor",
-    "telanjang", "bugil", "seksi", "montok", "bohay", "semok", "bahenol",
-    "kutang", "bh", "cangcut", "sempak", "kolor", "daleman",
+    "bercinta", "meniduri", "kutiduri", "ranjang", "pacar", "pacarku", "pacarmu",
+    "pacaran", "kekasih", "kekasihku", "kekasihmu", "nikah", "menikah", "menikahimu",
+    "suami", "istri", "selingkuh", "pelakor", "telanjang", "bugil", "seksi",
+    "montok", "bohay", "semok", "bahenol", "kutang", "bh", "cangcut", "sempak",
 
-    -- Kata Kasar, Umpatan & Vulgar (ID)
     "anjing", "anjir", "anjrit", "anjrot", "anying", "anjg", "ajg", "njir", "njrit",
     "asu", "asw", "kirik", "babi", "celeng", "bagong", "monyet", "kunyuk", "kampret",
     "goblok", "goblog", "gblk", "tolol", "tll", "bodoh", "bego", "begok", "bloon",
@@ -47,15 +126,13 @@ local strictBadWords = {
     "sodomi", "sepong", "nyepong", "sange", "horni", "birahi", "syahwat", "perawan",
     "seks", "seksual", "bokep", "mesum", "cabul", "perkosa", "memperkosa", "pedofil",
 
-    -- Kekerasan, Self-Harm, Mental Health & Narkoba (ID & EN)
     "bunuh", "membunuh", "pembunuh", "bantai", "membantai", "cekik", "tikam",
-    "tusuk", "bacok", "penggal", "mutilasi", "mayat", "jenazah", "bunuh diri",
+    "tusuk", "bacok", "penggal", "mutilasi", "mayat", "jenazah",
     "mabuk", "mabok", "miras", "alkohol", "tuak", "ciu", "amer", "narkoba",
     "ganja", "sabu", "ekstasi", "heroin", "kokain", "overdosis", "sakau", "judi", "judol",
     "depressed", "depressing", "depression", "depresi", "anxious", "anxiety",
     "suicidal", "suicide", "kms", "kys", "selfharm", "cutting", "worthless", "hopeless",
 
-    -- Profanity, Slurs & NSFW (EN)
     "motherfucker", "motherfucking", "mofo", "mf", "fucker", "fucking", "fuckin",
     "fucked", "fucks", "fuck", "fck", "fuk", "wtf", "stfu", "gtfo", "omfg",
     "shitting", "shitty", "bullshit", "horseshit", "dipshit", "shithead", "shits",
@@ -85,7 +162,6 @@ local strictBadWords = {
     "facebook", "snapchat", "tinder", "onlyfans", "spotify"
 }
 
--- Hanya akar kata yang PASTI diblokir oleh Scunthorpe filter Roblox
 local hardSubstrings = {
     "fuck", "fck", "fuk", "shit", "bitch", "cunt", "dick", "cock", "puss", "nigg",
     "fag", "slut", "whor", "rape", "pedo", "porn", "nude", "sex", "suicid", "depres",
@@ -100,50 +176,75 @@ for _, w in ipairs(strictBadWords) do
     wordLookup[w:lower()] = true
 end
 
--- Fungsi Bypass Murni ASCII (Tanpa simbol aneh / Zero-Width yang bikin Roblox curiga)
-local function bypassAsciiWord(word)
-    if #word < 3 then return word end
-    local mode = FilterModule.BypassMode or 1
-    local mid = math.max(2, math.floor(#word / 2))
-
-    if mode == 1 then
-        -- Jika ada huruf 'l' kecil, ubah 1 huruf 'l' menjadi 'I' besar (di font Gotham Roblox 100% identik)
-        local lPos = word:find("l", 2, true)
-        if lPos then
-            return word:sub(1, lPos - 1) .. "I" .. word:sub(lPos + 1)
-        end
-        -- Jika ada huruf 'I' besar, ubah menjadi 'l' kecil
-        local iPos = word:find("I", 2, true)
-        if iPos then
-            return word:sub(1, iPos - 1) .. "l" .. word:sub(iPos + 1)
-        end
-        -- Selain itu, sisipkan 1 tanda petik tunggal tipis (') tepat di tengah suku kata
-        return word:sub(1, mid) .. "'" .. word:sub(mid + 1)
-
-    elseif mode == 2 then
-        -- Sisipkan 1 tanda hubung (-) di tengah kata (Contoh: "tu-buhmu", "je-mbut")
-        return word:sub(1, mid) .. "-" .. word:sub(mid + 1)
-
-    else
-        -- Mode 3: Sisipkan 1 titik biasa (.) di tengah kata (Contoh: "tu.buhmu", "je.mbut")
-        return word:sub(1, mid) .. "." .. word:sub(mid + 1)
+local function matchCase(original, replacement)
+    if replacement == "" then return "" end
+    if original == original:upper() and #original > 1 then
+        return replacement:upper()
+    elseif original:sub(1, 1) == original:sub(1, 1):upper() then
+        return replacement:sub(1, 1):upper() .. replacement:sub(2)
     end
+    return replacement
+end
+
+local function bypassWord(word)
+    if #word < 2 then return word end
+    local lower = word:lower()
+    local mode = math.clamp(tonumber(FilterModule.BypassMode) or 1, 1, 3)
+
+    -- 1. Jika kata ada di kamus Tier-1 Direct Bypass (seperti fuck, shit, bitch, jembut, tubuhmu)
+    if tier1DirectBypass[lower] then
+        return matchCase(word, tier1DirectBypass[lower][mode])
+    end
+
+    -- 2. Jika kata mengandung "fuck" di dalamnya (seperti motherfucker, clusterfuck)
+    if lower:find("fuck", 1, true) then
+        local rep = (mode == 1 and "fùck") or (mode == 2 and "fvck") or "fu ck"
+        return word:gsub("[fF][uU][cC][kK]", function(m) return matchCase(m, rep) end)
+    end
+
+    -- 3. Untuk kata sensitif lainnya sesuai Mode
+    if mode == 1 then
+        -- Ganti vokal pertama/kedua dengan huruf vokal beraksen Eropa Barat (ù, ì, é, ò, à)
+        local replaced = false
+        local res = word:gsub("([aeiouAEIOU])", function(v)
+            if not replaced and accentVowelMap[v] then
+                replaced = true
+                return accentVowelMap[v]
+            end
+            return v
+        end)
+        if replaced then return res end
+    elseif mode == 2 then
+        -- Ganti 1 vokal dengan karakter visual ASCII (u->v, i->I, e->3, o->0, a->4)
+        local leet = {["u"]="v", ["i"]="I", ["l"]="I", ["e"]="3", ["o"]="0", ["a"]="4"}
+        local replaced = false
+        local res = word:gsub("([uileoal])", function(c)
+            if not replaced and leet[c] then
+                replaced = true
+                return leet[c]
+            end
+            return c
+        end)
+        if replaced then return res end
+    end
+
+    -- Mode 3 atau Fallback: Pisahkan suku kata tengah dengan spasi
+    local mid = math.max(2, math.floor(#word / 2))
+    return word:sub(1, mid) .. " " .. word:sub(mid + 1)
 end
 
 local function isBadWord(word)
     local lowerWord = word:lower():gsub("'", "")
-    if wordLookup[lowerWord] then return true end
+    if tier1DirectBypass[lowerWord] or wordLookup[lowerWord] then return true end
 
-    -- Cek akhiran umum (-mu, -ku, -nya, -lah, -s, -ing, -ed) pada daftar strictBadWords
     local suffixes = {"nya", "mu", "ku", "lah", "kan", "ing", "ed", "es", "s"}
     for _, suf in ipairs(suffixes) do
         if #lowerWord > #suf + 2 and lowerWord:sub(-#suf) == suf then
             local stem = lowerWord:sub(1, #lowerWord - #suf)
-            if wordLookup[stem] then return true end
+            if tier1DirectBypass[stem] or wordLookup[stem] then return true end
         end
     end
 
-    -- Cek substring terlarang
     for _, sub in ipairs(hardSubstrings) do
         if lowerWord:find(sub, 1, true) then
             return true
@@ -158,28 +259,26 @@ function FilterModule.Sanitize(text, enabled)
 
     local cleaned = text:gsub("([%a'*%-]+)", function(word)
         if word:find("%*") then
-            return bypassAsciiWord(word:gsub("%*", "u"))
+            return bypassWord(word:gsub("%*", "u"))
         end
 
         if word:find("%-") then
             local parts = string.split(word, "-")
             for i, p in ipairs(parts) do
                 if isBadWord(p) then
-                    parts[i] = bypassAsciiWord(p)
+                    parts[i] = bypassWord(p)
                 end
             end
             return table.concat(parts, "-")
         end
 
         if isBadWord(word) then
-            return bypassAsciiWord(word)
+            return bypassWord(word)
         end
 
-        -- Kata yang aman dibiarkan 100% utuh!
         return word
     end)
 
-    -- Pisahkan angka berurutan dengan spasi biasa agar tidak dikira nomor telepon
     cleaned = cleaned:gsub("(%d)(%d)", "%1 %2"):gsub("(%d)(%d)", "%1 %2")
     return cleaned
 end
