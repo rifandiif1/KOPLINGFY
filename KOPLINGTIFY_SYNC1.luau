@@ -1,5 +1,5 @@
 -- =================================================================================
--- KOPLINGTIFY LITE v2.5 - MODULAR SYNC ENGINE (KOPLINGTIFY_SYNC.luau)
+-- KOPLINGTIFY LITE v2.5 - MODULAR SYNC ENGINE + NATURAL TRANSLATOR (KOPLINGTIFY_SYNC.luau)
 -- =================================================================================
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -37,7 +37,9 @@ local Config = {
     orbitDirection = 1,
     isCinematicBars = false,
     isNoClipEnabled = false,
-    isWallViewEnabled = false
+    isWallViewEnabled = false,
+    isShiftLockEnabled = false,
+    isShiftPinEnabled = false
 }
 
 local function loadSavedConfig()
@@ -215,6 +217,8 @@ local chatLangNames = {"Asli/Rom", "Indo", "Dual"}
 
 local isMutedLocally, originalVolume = false, 0.5
 local lastSentLine = ""
+local lastRawSentText = ""
+local lastSanitizedSentText = ""
 local scanToken, transToken = 0, 0
 local isMinimized = false
 
@@ -289,6 +293,19 @@ if WorldOk and type(WorldModule) == "table" and WorldModule.Init then
     WorldController = WorldModule.Init(UI, showToast, Config, saveConfig)
 end
 
+local function updateFilterButtonLabel()
+    local learnedCount = 0
+    if FilterOk and type(FilterModule) == "table" and FilterModule.GetLearnedStats then
+        learnedCount = FilterModule.GetLearnedStats()
+    end
+    if learnedCount > 0 then
+        filterBtn.Text = string.format("🛡 Sensor: %s (%d)", safeFilterEnabled and "ON" or "OFF", learnedCount)
+    else
+        filterBtn.Text = "🛡 Sensor: " .. (safeFilterEnabled and "ON" or "OFF")
+    end
+    filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
+end
+
 local function applySubtitleStyle()
     subtitleFrame.Position = UDim2.new(0.5, -260 + subOffsetX, 0.80, subOffsetY)
     subtitleFrame.BackgroundTransparency = subCinemaBg and 0.35 or 1
@@ -314,8 +331,7 @@ transToggleBtn.Text = "🌍 Indo: " .. (translateEnabled and "ON" or "OFF")
 transToggleBtn.BackgroundColor3 = translateEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
 romToggleBtn.Text = "🔤 Latin: " .. (romanizeEnabled and "ON" or "OFF")
 romToggleBtn.BackgroundColor3 = romanizeEnabled and Color3.fromRGB(185, 135, 35) or Color3.fromRGB(36, 41, 50)
-filterBtn.Text = "🛡 Sensor: " .. (safeFilterEnabled and "ON" or "OFF")
-filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
+updateFilterButtonLabel()
 
 local subUiUpdaters = {}
 local function createSubSettingRow(yPos, labelText, formatStr, getVal, setVal, step, minVal, maxVal)
@@ -459,7 +475,102 @@ closeBtn.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
--- ======================== MESIN TRANSLATE & ROMANIZATION ANTI-GAGAL ========================
+-- ======================== MESIN TRANSLATE ALAMI (NATURAL LYRIC POLISHER) ========================
+local function preserveCase(origWord, newWord)
+    if origWord:sub(1, 1) == origWord:sub(1, 1):upper() then
+        return newWord:sub(1, 1):upper() .. newWord:sub(2)
+    end
+    return newWord
+end
+
+local function humanizeIndonesianLyric(str)
+    if not str or str == "" then return "" end
+    local res = " " .. str .. " "
+
+    -- 1. Ubah frasa baku Google Translate menjadi bahasa lirik lagu yang mengalir alami
+    local phraseRules = {
+        {"[Ss]aya mencintaimu", "Aku cinta kamu"},
+        {"[Aa]ku mencintaimu", "Aku cinta kamu"},
+        {"[Ss]aya menyayangimu", "Aku sayang kamu"},
+        {"[Aa]ku menyayangimu", "Aku sayang kamu"},
+        {"[Ss]aya merindukanmu", "Aku kangen kamu"},
+        {"[Aa]ku merindukanmu", "Aku rindu kamu"},
+        {"[Aa]pakah kamu", "Apa kamu"},
+        {"[Aa]pakah kau", "Apa kau"},
+        {"[Aa]pakah Anda", "Apa kamu"},
+        {"[Kk]amu adalah", "Kaulah"},
+        {"[Ee]ngkau adalah", "Kaulah"},
+        {"[Ss]aya adalah", "Akulah"},
+        {"[Tt]idak bisa", "Tak bisa"},
+        {"[Tt]idak dapat", "Tak bisa"},
+        {"[Tt]idak pernah", "Tak pernah"},
+        {"[Tt]idak tahu", "Tak tahu"},
+        {"[Tt]idak mau", "Tak mau"},
+        {"[Tt]idak ingin", "Tak ingin"},
+        {"[Tt]idak akan", "Takkan"},
+        {"[Tt]idak ada", "Tiada"},
+        {"[Tt]idak peduli", "Tak peduli"},
+        {"[Tt]idak apa%-apa", "Tak apa"},
+        {"[Ss]angat banyak", "Begitu banyak"},
+        {"[Ss]angat jauh", "Begitu jauh"},
+        {"[Ss]angat dalam", "Begitu dalam"},
+        {"[Ss]angat sakit", "Begitu sakit"},
+        {"[Bb]eri tahu aku", "Katakan padaku"},
+        {"[Mm]emberi tahu", "Mengatakan"},
+        {"[Bb]erada di sini", "Ada di sini"},
+        {"[Bb]erada di sana", "Ada di sana"},
+        {"[Dd]i dalam hatiku", "Di hatiku"},
+        {"[Dd]i dalam pikiran", "Di pikiran"},
+        {"[Ss]epanjang waktu", "Setiap waktu"},
+        {"[Ss]etiap hari", "Tiap hari"},
+        {"[Ss]etiap malam", "Tiap malam"},
+        {"[Ss]ekali lagi", "Lagi"},
+        {"[Bb]ersama denganmu", "Bersamamu"},
+        {"[Uu]ntuk selamanya", "Selamanya"},
+        {"[Kk]e mana pun", "Ke mana saja"},
+        {"[Aa]pa pun yang", "Apa pun yang"}
+    }
+
+    for _, rule in ipairs(phraseRules) do
+        res = res:gsub(rule[1], function(match)
+            return preserveCase(match, rule[2])
+        end)
+    end
+
+    -- 2. Ganti kata ganti formal (Saya / Anda / Engkau / Milikku) menjadi lebih santai & puitis
+    local wordRules = {
+        ["saya"]    = "aku",
+        ["anda"]    = "kamu",
+        ["engkau"]  = "kau",
+        ["milikku"] = "punyaku",
+        ["milikmu"] = "punyamu",
+        ["mengapa"] = "kenapa",
+        ["bagaimana"] = "gimana",
+        ["seperti"] = "bagaikan",
+        ["namun"]   = "tapi",
+        ["tetapi"]  = "tapi",
+        ["sungguh"] = "benar-benar",
+        ["terlalu"] = "terlampau",
+        ["hanya"]   = "cuma"
+    }
+
+    res = res:gsub("([%a]+)", function(w)
+        local lw = w:lower()
+        if wordRules[lw] then
+            return preserveCase(w, wordRules[lw])
+        end
+        return w
+    end)
+
+    -- 3. Bersihkan spasi berlebih dan hapus tanda titik/koma kaku di ujung kalimat lirik
+    res = res:gsub("^%s+", ""):gsub("%s+$", "")
+    res = res:gsub("[.,]+$", "")
+    res = res:gsub("%s+([!?])", "%1")
+    res = res:gsub("%s+", " ")
+
+    return res
+end
+
 local function normalizeRomanizedASCII(str)
     if not str or str == "" then return "" end
     local diacritics = {
@@ -526,13 +637,16 @@ local function fetchTranslateAndRoman(text)
                     end
                 end
 
-                local translated = table.concat(transParts, ""):gsub("^%s+", ""):gsub("%s+$", "")
+                local rawTranslated = table.concat(transParts, ""):gsub("^%s+", ""):gsub("%s+$", "")
                 local romanized = normalizeRomanizedASCII(table.concat(romParts, " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", ""))
 
-                -- Hanya kosongkan jika lagu memang berbahasa Indonesia dan hasil terjemahannya identik
-                if srcLang == "id" and string.lower(translated) == key then
+                local translated = ""
+                if srcLang == "id" and string.lower(rawTranslated) == key then
                     translated = ""
+                else
+                    translated = humanizeIndonesianLyric(rawTranslated)
                 end
+
                 if not hasNonLatinScript(cleanInput) and string.lower(romanized) == key then
                     romanized = ""
                 end
@@ -548,7 +662,6 @@ end
 
 local refreshCurrentLyricDisplay
 
--- Batch Translation (Menerjemahkan 10 baris sekaligus dalam 1 Request agar cepat & bebas blokir Rate-Limit)
 local function prefetchTranslations(lyricList, myToken)
     task.spawn(function()
         local batchSize = 10
@@ -569,7 +682,6 @@ local function prefetchTranslations(lyricList, myToken)
                             lineObj.Trans = transCache[key].Trans
                             lineObj.Rom = transCache[key].Rom
                         elseif hasNonLatinScript(rawTxt) then
-                            -- Untuk huruf Jepang/Korea/Mandarin/Arab/Rusia, ambil per baris agar Romaji akurat
                             local tr, rm = fetchTranslateAndRoman(rawTxt)
                             if transToken ~= myToken then return end
                             lineObj.Trans = tr
@@ -607,9 +719,12 @@ local function prefetchTranslations(lyricList, myToken)
                                 local srcLang = type(data[3]) == "string" and data[3] or ""
                                 for idx, lyricIdx in ipairs(batchIndices) do
                                     local origTxt = batchTexts[idx]
-                                    local trLine = (splitLines[idx] or ""):gsub("^%s+", ""):gsub("%s+$", "")
-                                    if srcLang == "id" and string.lower(trLine) == string.lower(origTxt) then
+                                    local rawTrLine = (splitLines[idx] or ""):gsub("^%s+", ""):gsub("%s+$", "")
+                                    local trLine = ""
+                                    if srcLang == "id" and string.lower(rawTrLine) == string.lower(origTxt) then
                                         trLine = ""
+                                    else
+                                        trLine = humanizeIndonesianLyric(rawTrLine)
                                     end
                                     lyricList[lyricIdx].Trans = trLine
                                     lyricList[lyricIdx].Rom = ""
@@ -622,7 +737,6 @@ local function prefetchTranslations(lyricList, myToken)
                         end
                     end
 
-                    -- Fallback per-baris jika batch tidak sama jumlah barisnya
                     if not batchSuccess then
                         for _, lyricIdx in ipairs(batchIndices) do
                             if transToken ~= myToken then return end
@@ -728,9 +842,13 @@ local function searchLyrics(query)
     return results
 end
 
-local function sendChat(message)
-    if not message or message == "" then return end
-    local safeMsg = sanitizeLyricText(message)
+-- ======================== PENGIRIMAN CHAT & DETEKTOR SENSOR OTOMATIS ========================
+local function sendChat(rawMessage)
+    if not rawMessage or rawMessage == "" then return end
+    local safeMsg = sanitizeLyricText(rawMessage)
+    lastRawSentText = rawMessage
+    lastSanitizedSentText = safeMsg
+
     local sent = false
     pcall(function()
         if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
@@ -750,6 +868,28 @@ local function sendChat(message)
         end)
     end
 end
+
+pcall(function()
+    TextChatService.MessageReceived:Connect(function(chatMessage)
+        if not gui.Parent then return end
+        local source = chatMessage.TextSource
+        if source and source.UserId == player.UserId then
+            local finalText = tostring(chatMessage.Text or "")
+            if finalText:find("#", 1, true) and not lastRawSentText:find("#", 1, true) then
+                if FilterOk and type(FilterModule) == "table" and FilterModule.RecordCensoredMessage then
+                    local songName = activeItem and (activeItem.Title .. " - " .. activeItem.Artist) or "Unknown"
+                    local learnedNew = FilterModule.RecordCensoredMessage(lastRawSentText, lastSanitizedSentText, finalText, songName)
+                    updateFilterButtonLabel()
+                    if learnedNew > 0 then
+                        showToast(string.format("📝 %d kata tersensor disimpan ke Log!", learnedNew), Color3.fromRGB(215, 130, 35))
+                    else
+                        showToast("📝 Kalimat tersensor dicatat ke Log!", Color3.fromRGB(215, 130, 35))
+                    end
+                end
+            end
+        end
+    end)
+end)
 
 local function findSound()
     local best, bestVolume = nil, -1
@@ -836,24 +976,23 @@ resetSyncBtn.MouseButton1Click:Connect(function()
 end)
 updateSyncText()
 
-local function buildChatLine(origTxt, indoTxt, romTxt)
+local function buildRawChatLine(origTxt, indoTxt, romTxt)
     local baseTxt = (romanizeEnabled and romTxt and romTxt ~= "") and romTxt or (origTxt or "")
-    local cleanOrig = sanitizeLyricText(baseTxt)
-    local cleanIndo = sanitizeLyricText(indoTxt or "")
+    local cleanIndo = indoTxt or ""
     if chatLangMode == 2 and cleanIndo ~= "" then
         return cleanIndo
     elseif chatLangMode == 3 and cleanIndo ~= "" then
-        return cleanOrig .. " (" .. cleanIndo .. ")"
+        return baseTxt .. " (" .. cleanIndo .. ")"
     end
-    return cleanOrig
+    return baseTxt
 end
 
 local function updateDisplayedLyric(prevTxt, currTxt, nextTxt, indoTxt, romTxt, animatePop)
-    local sPrev = sanitizeLyricText(prevTxt or "")
-    local sCurr = sanitizeLyricText(currTxt or "")
-    local sNext = sanitizeLyricText(nextTxt or "")
-    local sRom  = (romanizeEnabled and romTxt and romTxt ~= "") and sanitizeLyricText(romTxt) or ""
-    local sIndo = (translateEnabled and indoTxt and indoTxt ~= "") and sanitizeLyricText(indoTxt) or ""
+    local sPrev = prevTxt or ""
+    local sCurr = currTxt or ""
+    local sNext = nextTxt or ""
+    local sRom  = (romanizeEnabled and romTxt and romTxt ~= "") and romTxt or ""
+    local sIndo = (translateEnabled and indoTxt and indoTxt ~= "") and indoTxt or ""
 
     prevLine.Text = sPrev
     currentLine.Text = sCurr
@@ -909,7 +1048,7 @@ lyricCard.MouseButton1Click:Connect(function()
     if currentIndex > 0 and lyrics[currentIndex] then
         local itemCurr = lyrics[currentIndex]
         if itemCurr.Text ~= "" then
-            sendChat(buildChatLine(itemCurr.Text, itemCurr.Trans, itemCurr.Rom))
+            sendChat(buildRawChatLine(itemCurr.Text, itemCurr.Trans, itemCurr.Rom))
             cardStroke.Color = Color3.fromRGB(40, 235, 140)
             task.delay(0.25, function()
                 if cardStroke then cardStroke.Color = Color3.fromRGB(42, 50, 64) end
@@ -960,10 +1099,22 @@ end)
 
 filterBtn.MouseButton1Click:Connect(function()
     safeFilterEnabled = not safeFilterEnabled
-    filterBtn.Text = "🛡 Sensor: " .. (safeFilterEnabled and "ON" or "OFF")
-    filterBtn.BackgroundColor3 = safeFilterEnabled and Color3.fromRGB(30, 145, 90) or Color3.fromRGB(36, 41, 50)
+    updateFilterButtonLabel()
     syncMainConfig()
     refreshCurrentLyricDisplay(false)
+end)
+
+filterBtn.MouseButton2Click:Connect(function()
+    if FilterOk and type(FilterModule) == "table" and FilterModule.ExportLearnedWordsList then
+        local exported = FilterModule.ExportLearnedWordsList()
+        local wCount, hCount = FilterModule.GetLearnedStats()
+        if exported ~= "" and type(setclipboard) == "function" then
+            setclipboard(exported)
+            showToast(string.format("📋 %d kata tersensor disalin ke Clipboard!", wCount))
+        else
+            showToast(string.format("Log Sensor: %d kata, %d riwayat (Koplingtify_CensoredLog.json)", wCount, hCount))
+        end
+    end
 end)
 
 local resultButtons = {}
@@ -1243,7 +1394,6 @@ RunService.Heartbeat:Connect(function()
         local currTxt = text ~= "" and text or "♪"
         local nextTxt = lyrics[found + n] and lyrics[found + n].Text or ""
 
-        -- Jika baris ini belum sempat diterjemahkan oleh Batch, ambil langsung secara instan
         if (translateEnabled or romanizeEnabled) and (line.Trans == nil or line.Trans == "") and text ~= "" and text ~= "♪" then
             task.spawn(function()
                 local tr, rm = fetchTranslateAndRoman(text)
@@ -1258,15 +1408,15 @@ RunService.Heartbeat:Connect(function()
         updateDisplayedLyric(prevTxt, currTxt, nextTxt, line.Trans or "", line.Rom or "", true)
 
         if autoChat and text ~= "" then
-            local chatPayload = buildChatLine(text, line.Trans, line.Rom)
-            if chatPayload ~= "" and chatPayload ~= lastSentLine then
-                lastSentLine = chatPayload
-                sendChat(chatPayload)
+            local rawPayload = buildRawChatLine(text, line.Trans, line.Rom)
+            if rawPayload ~= "" and rawPayload ~= lastSentLine then
+                lastSentLine = rawPayload
+                sendChat(rawPayload)
             end
         end
     end
 end)
 
 applySubtitleStyle()
-showToast("Koplingtify Lite v2.5 siap!")
-print("Koplingtify Lite v2.5 Modular (Pure ASCII Filter + Batch Translate) loaded.")
+showToast("Koplingtify Lite v2.5 (Natural Translate) siap!")
+print("Koplingtify Lite v2.5 Modular loaded.")
