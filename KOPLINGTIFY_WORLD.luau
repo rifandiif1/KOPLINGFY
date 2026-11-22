@@ -575,7 +575,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     end
 
     local function scanWallsAndSecretPassages(cam, focusPos, ignoreChar)
-        -- 1. Buat tembok yang menghalangi kamera jadi transparan
+        -- 1. Buat tembok penghalang kamera jadi transparan
         restoreFadedWalls()
         local okParts, obstructing = pcall(function()
             return cam:GetPartsObscuringTarget({focusPos}, {ignoreChar})
@@ -589,14 +589,14 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
             end
         end
 
-        -- 2. Deteksi Tembok Rahasia / Tembok Palsu (CanCollide == false atau tembus) di sekitar karakter tiap 0.35 detik
+        -- 2. Deteksi Batas Tembok/Lantai Transparan (Invisible Barrier) di map tiap 0.35 detik
         local now = tick()
         if now - lastWallScan < 0.35 then return end
         lastWallScan = now
 
-        -- Bersihkan highlight tembok yang sudah jauh
+        -- Hapus garis batas yang sudah jauh (> 140 stud) atau jika propertinya berubah
         for part, box in pairs(secretWallBoxes) do
-            if not part or not part.Parent or (part.Position - focusPos).Magnitude > 130 then
+            if not part or not part.Parent or (part.Position - focusPos).Magnitude > 140 or part.Transparency < 0.85 then
                 if box then pcall(function() box:Destroy() end) end
                 secretWallBoxes[part] = nil
             end
@@ -606,25 +606,24 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         overlapParams.FilterType = Enum.RaycastFilterType.Exclude
         overlapParams.FilterDescendantsInstances = {ignoreChar}
 
-        local nearbyParts = workspace:GetPartBoundsInRadius(focusPos, 110, overlapParams)
+        local nearbyParts = workspace:GetPartBoundsInRadius(focusPos, 120, overlapParams)
         for _, part in ipairs(nearbyParts) do
             if part:IsA("BasePart") and not part:IsDescendantOf(gui) then
-                -- Ciri khas tembok rahasia / pintu tersembunyi di Roblox:
-                -- Ukuran cukup besar menyerupai dinding/lantai, tidak bisa ditabrak (CanCollide = false),
-                -- atau tembok semi-transparan yang sengaja disamarkan
-                local sz = part.Size
-                local isWallSized = (sz.X >= 3 or sz.Z >= 3) and sz.Y >= 3 and (sz.X * sz.Y * sz.Z) >= 12
                 local isCharacterPart = part.Parent and part.Parent:FindFirstChildOfClass("Humanoid")
+                local sz = part.Size
+                -- Abaikan partikel/titik super kecil (seperti hitbox peluru atau sensor kecil < 1 stud)
+                local isBarrierSized = (sz.X >= 1.5 or sz.Y >= 1.5 or sz.Z >= 1.5)
 
-                if isWallSized and not isCharacterPart and not part.CanCollide and part.Transparency < 0.95 then
+                -- Target: Bagian map yang dibuat transparan (Transparency >= 0.85) dan padat (CanCollide == true)
+                if not isCharacterPart and isBarrierSized and part.Transparency >= 0.85 and part.CanCollide then
                     if not secretWallBoxes[part] then
                         local selBox = Instance.new("SelectionBox")
-                        selBox.Name = "KoplingSecretWallESP"
+                        selBox.Name = "KoplingInvisibleBarrierESP"
                         selBox.Adornee = part
-                        selBox.Color3 = Color3.fromRGB(45, 255, 155)
-                        selBox.SurfaceColor3 = Color3.fromRGB(45, 255, 155)
-                        selBox.SurfaceTransparency = 0.78
-                        selBox.LineThickness = 0.04
+                        selBox.Color3 = Color3.fromRGB(0, 215, 255) -- Garis tepi biru cyan terang
+                        selBox.SurfaceColor3 = Color3.fromRGB(0, 185, 255)
+                        selBox.SurfaceTransparency = 0.85 -- Isi permukaan tipis agar bentuk tembok terlihat jelas
+                        selBox.LineThickness = 0.035
                         selBox.Parent = gui
                         secretWallBoxes[part] = selBox
                     end
