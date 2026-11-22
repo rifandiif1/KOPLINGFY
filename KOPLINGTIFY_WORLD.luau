@@ -1,5 +1,6 @@
 -- =================================================================================
--- KOPLINGTIFY LITE v2.5 - MODULAR WORLD & CAMERA ENGINE (KOPLINGTIFY_WORLD.luau)
+-- KOPLINGTIFY LITE v2.5 - COMPLETE WORLD, FLY, SPECTATE & MULTI-CAMERA ENGINE
+-- File: KOPLINGTIFY_WORLD.luau
 -- =================================================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -14,6 +15,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     Config = Config or {}
     saveConfig = saveConfig or function() end
 
+    -- Referensi UI dari KOPLINGTIFY_UI
     local orbitBtn = UI.OrbitBtn
     local orbitCfgBtn = UI.OrbitCfgBtn
     local orbitPanel = UI.OrbitPanel
@@ -38,15 +40,23 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     local makeHoldable = UI.MakeHoldable
     local enableDrag = UI.EnableDrag
 
+    -- ======================== STATE KONFIGURASI ========================
     local isNoClipEnabled = Config.isNoClipEnabled == true
     local isWallViewEnabled = Config.isWallViewEnabled == true
     local isShiftLockEnabled = Config.isShiftLockEnabled == true
     local isShiftPinEnabled = Config.isShiftPinEnabled == true
+    local isFlyEnabled = false
+    local flySpeed = tonumber(Config.flySpeed) or 50
 
-    local savedCanCollide, fadedWallParts = {}, {}
+    local savedCanCollide, fadedWallParts, secretWallBoxes = {}, {}, {}
     local origOcclusionMode = player.DevCameraOcclusionMode
+    local lastWallScan = 0
 
-    local isOrbitEnabled, wasOrbitCam = false, false
+    -- State Multi-Mode Kamera
+    -- 1 = Orbit Putar | 2 = FreeCam Bebas | 3 = Drone Atas (Top-Down) | 4 = First-Person Sinematik
+    local camModeNames = {"Orbit Putar", "FreeCam Bebas", "Drone Atas", "First-Person"}
+    local camModeIndex = tonumber(Config.camModeIndex) or 1
+    local isCustomCamEnabled, wasCustomCam = false, false
     local orbitAngle = 0
     local orbitDistance = tonumber(Config.orbitDistance) or 10.0
     local orbitHeight = tonumber(Config.orbitHeight) or 3.5
@@ -55,18 +65,24 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     local orbitFOV = tonumber(Config.orbitFOV) or 70
     local orbitDirection = tonumber(Config.orbitDirection) or 1
     local savedDefaultFOV = (workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView) or 70
+    local freeCamPos = nil
 
+    -- State Kotak Cinematic Terpisah
     local isCinematicBars = Config.isCinematicBars == true
-    local autoBarsOnOrbit = true
     local barHeightScale = 0.12
 
-    local trackedPlayer, trackerHighlight, trackerBillboard, trackerNameLbl, trackerBeam, trackerAtt0, trackerAtt1 = nil, nil, nil, nil, nil, nil, nil
+    -- State Pelacak & Intip (Spectate) User
+    local trackedPlayer = nil
+    local isSpectatingUser = false
+    local trackerHighlight, trackerBillboard, trackerNameLbl, trackerBeam, trackerAtt0, trackerAtt1 = nil, nil, nil, nil, nil, nil
 
     local function syncWorldConfig()
         Config.isNoClipEnabled = isNoClipEnabled
         Config.isWallViewEnabled = isWallViewEnabled
         Config.isShiftLockEnabled = isShiftLockEnabled
         Config.isShiftPinEnabled = isShiftPinEnabled
+        Config.flySpeed = flySpeed
+        Config.camModeIndex = camModeIndex
         Config.orbitDistance = orbitDistance
         Config.orbitHeight = orbitHeight
         Config.orbitSpeed = orbitSpeed
@@ -77,25 +93,45 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         saveConfig()
     end
 
-    -- ======================== INJEKSI TOMBOL SHIFTLOCK & FLOATING PIN ========================
+    -- ======================== PENATAAN TOMBOL BARIS WORLD ========================
     local worldActionParent = noclipBtn.Parent
     local rowY = noclipBtn.Position.Y.Offset
     local rowH = noclipBtn.Size.Y.Offset
 
-    -- Sesuaikan baris tombol menjadi 3 kolom + 1 tombol Pin Floating kecil
+    -- Baris 1: [👻 NoClip] [🧱 Tembok] [🕊️ Fly] [🎬 Cinema]
     noclipBtn.Position = UDim2.new(0, 0, 0, rowY)
-    noclipBtn.Size = UDim2.new(0.31, -2, 0, rowH)
+    noclipBtn.Size = UDim2.new(0.25, -2, 0, rowH)
     noclipBtn.TextSize = 10
 
-    wallViewBtn.Position = UDim2.new(0.31, 2, 0, rowY)
-    wallViewBtn.Size = UDim2.new(0.31, -2, 0, rowH)
+    wallViewBtn.Position = UDim2.new(0.25, 2, 0, rowY)
+    wallViewBtn.Size = UDim2.new(0.25, -2, 0, rowH)
     wallViewBtn.TextSize = 10
 
+    local flyBtn = makeButton(
+        worldActionParent,
+        "🕊️ Fly: OFF",
+        UDim2.new(0.50, 2, 0, rowY),
+        UDim2.new(0.25, -2, 0, rowH),
+        Color3.fromRGB(36, 41, 50)
+    )
+    flyBtn.TextSize = 10
+
+    local cinemaToggleBtn = makeButton(
+        worldActionParent,
+        "🎬 Cinema",
+        UDim2.new(0.75, 2, 0, rowY),
+        UDim2.new(0.25, -2, 0, rowH),
+        Color3.fromRGB(36, 41, 50)
+    )
+    cinemaToggleBtn.TextSize = 10
+
+    -- Baris 2 (Tepat di bawahnya): [🎯 ShiftLock: OFF] [📌 Pin] [🎥 Mode Kamera] [⚙️ Setting]
+    local row2Y = rowY + rowH + 6
     local shiftLockBtn = makeButton(
         worldActionParent,
         "🎯 Shift: OFF",
-        UDim2.new(0.62, 4, 0, rowY),
-        UDim2.new(0.28, -4, 0, rowH),
+        UDim2.new(0, 0, 0, row2Y),
+        UDim2.new(0.32, -2, 0, rowH),
         Color3.fromRGB(36, 41, 50)
     )
     shiftLockBtn.TextSize = 10
@@ -103,13 +139,43 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     local shiftPinBtn = makeButton(
         worldActionParent,
         "📌",
-        UDim2.new(0.90, 4, 0, rowY),
-        UDim2.new(0.10, -4, 0, rowH),
+        UDim2.new(0.32, 2, 0, row2Y),
+        UDim2.new(0.11, -2, 0, rowH),
         Color3.fromRGB(45, 52, 64)
     )
     shiftPinBtn.TextSize = 11
 
-    -- Tombol Floating ShiftLock (Bisa digeser bebas di layar HP)
+    -- Kembalikan & rapikan tombol Kamera Utama + Tombol Setting (⚙️)
+    orbitBtn.Parent = worldActionParent
+    orbitBtn.Position = UDim2.new(0.43, 2, 0, row2Y)
+    orbitBtn.Size = UDim2.new(0.43, -2, 0, rowH)
+    orbitBtn.TextSize = 10
+    orbitBtn.Text = "🎥 Cam: OFF"
+
+    orbitCfgBtn.Parent = worldActionParent
+    orbitCfgBtn.Visible = true
+    orbitCfgBtn.Position = UDim2.new(0.86, 2, 0, row2Y)
+    orbitCfgBtn.Size = UDim2.new(0.14, -2, 0, rowH)
+    orbitCfgBtn.Text = "⚙️"
+    orbitCfgBtn.TextSize = 12
+
+    -- Geser elemen di bawahnya dalam container yang sama (jika ada) agar tidak bertumpuk
+    for _, sibling in ipairs(worldActionParent:GetChildren()) do
+        if sibling:IsA("GuiObject") and sibling ~= noclipBtn and sibling ~= wallViewBtn and sibling ~= flyBtn
+            and sibling ~= cinemaToggleBtn and sibling ~= shiftLockBtn and sibling ~= shiftPinBtn
+            and sibling ~= orbitBtn and sibling ~= orbitCfgBtn then
+            if sibling.Position.Y.Offset >= row2Y then
+                sibling.Position = UDim2.new(
+                    sibling.Position.X.Scale,
+                    sibling.Position.X.Offset,
+                    sibling.Position.Y.Scale,
+                    sibling.Position.Y.Offset + rowH + 6
+                )
+            end
+        end
+    end
+
+    -- ======================== FLOATING SHIFTLOCK & CROSSHAIR ========================
     local floatShiftBtn = Instance.new("TextButton")
     floatShiftBtn.Name = "KoplingFloatShiftLock"
     floatShiftBtn.Size = UDim2.new(0, 44, 0, 44)
@@ -128,7 +194,6 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     floatShiftStroke.Color = Color3.fromRGB(70, 80, 100)
     floatShiftStroke.Thickness = 1.8
 
-    -- Indikator Crosshair titik tengah saat ShiftLock aktif
     local crosshairDot = Instance.new("Frame")
     crosshairDot.Name = "ShiftLockCrosshair"
     crosshairDot.Size = UDim2.new(0, 6, 0, 6)
@@ -147,7 +212,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         enableDrag(floatShiftBtn, floatShiftBtn)
     end
 
-    -- ======================== CINEMATIC BARS ========================
+    -- ======================== KOTAK CINEMATIC BAR TERPISAH ========================
     local cinemaGui = Instance.new("ScreenGui")
     cinemaGui.Name = "KoplingtifyCinemaBars"
     cinemaGui.IgnoreGuiInset = true
@@ -171,20 +236,10 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     bottomCinemaBar.BorderSizePixel = 0
     bottomCinemaBar.Parent = cinemaGui
 
-    orbitDirBtn.Size = UDim2.new(0, 82, 0, 32)
-    orbitDirBtn.Position = UDim2.new(0, 12, 0, 244)
-    orbitDirBtn.Text = orbitDirection == 1 and "🔄 Kanan" or "🔄 Kiri"
-
-    local cinemaBarBtn = makeButton(orbitPanel, "🎬 Bar: OFF", UDim2.new(0, 99, 0, 244), UDim2.new(0, 82, 0, 32), Color3.fromRGB(45, 52, 64))
-
-    orbitResetBtn.Size = UDim2.new(0, 82, 0, 32)
-    orbitResetBtn.Position = UDim2.new(0, 186, 0, 244)
-    orbitResetBtn.Text = "♻ Reset"
-
     local function setCinematicBars(state, skipSave)
         isCinematicBars = state
-        cinemaBarBtn.Text = "🎬 Bar: " .. (isCinematicBars and "ON" or "OFF")
-        cinemaBarBtn.BackgroundColor3 = isCinematicBars and Color3.fromRGB(35, 150, 90) or Color3.fromRGB(45, 52, 64)
+        cinemaToggleBtn.Text = "🎬 Cinema"
+        cinemaToggleBtn.BackgroundColor3 = isCinematicBars and Color3.fromRGB(35, 150, 90) or Color3.fromRGB(36, 41, 50)
 
         local tweenInfo = TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
         if isCinematicBars then
@@ -197,23 +252,37 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         if not skipSave then syncWorldConfig() end
     end
 
-    cinemaBarBtn.MouseButton1Click:Connect(function()
+    cinemaToggleBtn.MouseButton1Click:Connect(function()
         setCinematicBars(not isCinematicBars)
-        showToast("Cinematic Bar " .. (isCinematicBars and "ON" or "OFF"))
+        showToast("Kotak Cinematic " .. (isCinematicBars and "ON" or "OFF"))
     end)
+
+    -- ======================== PANEL PENGATURAN KAMERA & FLY ADMIN ========================
+    -- Perbesar sedikit tinggi orbitPanel agar muat pemilih Mode Kamera + Kecepatan Fly
+    orbitPanel.Size = UDim2.new(0, 280, 0, 326)
+
+    -- Tombol Ganti Mode Kamera di dalam panel pengaturan
+    local camModeCycleBtn = makeButton(
+        orbitPanel,
+        "🎥 Mode: " .. camModeNames[camModeIndex],
+        UDim2.new(0, 12, 0, 74),
+        UDim2.new(0, 256, 0, 26),
+        Color3.fromRGB(58, 48, 86)
+    )
+    camModeCycleBtn.TextSize = 11
 
     local orbitUiUpdaters = {}
     local function createOrbitSettingRow(yPos, labelText, formatStr, getVal, setVal, step, minVal, maxVal)
-        local lbl = makeLabel(orbitPanel, labelText, UDim2.new(0, 12, 0, yPos), UDim2.new(0, 125, 0, 26), labelText, 11, Color3.fromRGB(210, 215, 225))
+        local lbl = makeLabel(orbitPanel, labelText, UDim2.new(0, 12, 0, yPos), UDim2.new(0, 125, 0, 24), labelText, 11, Color3.fromRGB(210, 215, 225))
         lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-        local btnMinus = makeButton(orbitPanel, "−", UDim2.new(0, 142, 0, yPos), UDim2.new(0, 32, 0, 26), Color3.fromRGB(40, 46, 56))
+        local btnMinus = makeButton(orbitPanel, "−", UDim2.new(0, 142, 0, yPos), UDim2.new(0, 32, 0, 24), Color3.fromRGB(40, 46, 56))
         btnMinus.TextSize = 15
 
-        local valLbl = makeLabel(orbitPanel, "Val", UDim2.new(0, 176, 0, yPos), UDim2.new(0, 56, 0, 26), string.format(formatStr, getVal()), 11, Color3.fromRGB(205, 165, 255))
+        local valLbl = makeLabel(orbitPanel, "Val", UDim2.new(0, 176, 0, yPos), UDim2.new(0, 56, 0, 24), string.format(formatStr, getVal()), 11, Color3.fromRGB(205, 165, 255))
         valLbl.Font = Enum.Font.GothamBold
 
-        local btnPlus = makeButton(orbitPanel, "+", UDim2.new(0, 236, 0, yPos), UDim2.new(0, 32, 0, 26), Color3.fromRGB(40, 46, 56))
+        local btnPlus = makeButton(orbitPanel, "+", UDim2.new(0, 236, 0, yPos), UDim2.new(0, 32, 0, 24), Color3.fromRGB(40, 46, 56))
         btnPlus.TextSize = 15
 
         local function refresh()
@@ -235,14 +304,87 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         end)
     end
 
-    createOrbitSettingRow(78,  "Jarak (Stud):",    "%.1f",  function() return orbitDistance end,   function(v) orbitDistance = v end,   0.5,  2.0,  60.0)
-    createOrbitSettingRow(110, "Ketinggian (Y):",  "%.1f",  function() return orbitHeight end,     function(v) orbitHeight = v end,     0.5, -10.0, 35.0)
-    createOrbitSettingRow(142, "Kecepatan Putar:", "%.2fx", function() return orbitSpeed end,      function(v) orbitSpeed = v end,      0.05, 0.0,  5.0)
-    createOrbitSettingRow(174, "Titik Fokus (Y):", "%.1f",  function() return orbitLookHeight end, function(v) orbitLookHeight = v end, 0.5, -5.0,  10.0)
-    createOrbitSettingRow(206, "Sudut Lensa FOV:", "%d°",   function() return orbitFOV end,        function(v) orbitFOV = v end,        2,    20,   120)
+    createOrbitSettingRow(104, "Jarak Kamera:",     "%.1f",  function() return orbitDistance end,   function(v) orbitDistance = v end,   0.5,  1.5,  80.0)
+    createOrbitSettingRow(132, "Ketinggian (Y):",   "%.1f",  function() return orbitHeight end,     function(v) orbitHeight = v end,     0.5, -10.0, 50.0)
+    createOrbitSettingRow(160, "Kecepatan Putar:",  "%.2fx", function() return orbitSpeed end,      function(v) orbitSpeed = v end,      0.05, 0.0,  5.0)
+    createOrbitSettingRow(188, "Titik Fokus (Y):",  "%.1f",  function() return orbitLookHeight end, function(v) orbitLookHeight = v end, 0.5, -5.0,  10.0)
+    createOrbitSettingRow(216, "Sudut Lensa FOV:",  "%d°",   function() return orbitFOV end,        function(v) orbitFOV = v end,        2,    20,   120)
+    createOrbitSettingRow(244, "Speed Fly/FreeCam:","%d",    function() return flySpeed end,        function(v) flySpeed = v end,        5,    10,   250)
+
+    orbitDirBtn.Size = UDim2.new(0, 124, 0, 30)
+    orbitDirBtn.Position = UDim2.new(0, 12, 0, 280)
+    orbitDirBtn.Text = orbitDirection == 1 and "🔄 Arah: Kanan" or "🔄 Arah: Kiri"
+
+    orbitResetBtn.Size = UDim2.new(0, 124, 0, 30)
+    orbitResetBtn.Position = UDim2.new(0, 144, 0, 280)
+    orbitResetBtn.Text = "♻ Reset Semua"
+
+    -- ======================== SISTEM FLY ADMIN (MOBILE & PC) ========================
+    local flyBV, flyBG = nil, nil
+
+    local function stopFlyPhysics()
+        if flyBV then pcall(function() flyBV:Destroy() end); flyBV = nil end
+        if flyBG then pcall(function() flyBG:Destroy() end); flyBG = nil end
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+        end
+    end
+
+    local function toggleFlyAdmin()
+        isFlyEnabled = not isFlyEnabled
+        flyBtn.Text = "🕊️ Fly: " .. (isFlyEnabled and "ON" or "OFF")
+        flyBtn.BackgroundColor3 = isFlyEnabled and Color3.fromRGB(45, 165, 220) or Color3.fromRGB(36, 41, 50)
+        if not isFlyEnabled then
+            stopFlyPhysics()
+        end
+        showToast("Fly Admin " .. (isFlyEnabled and "Aktif! (Gunakan Analog/WASD)" or "Dimatikan"))
+    end
+
+    flyBtn.MouseButton1Click:Connect(toggleFlyAdmin)
+
+    -- ======================== TAB USER: PELACAK + FITUR INTIP (SPECTATE) ========================
+    -- Sesuaikan tombol bawah di Tab User menjadi 3 tombol: [👁️ Intip] [⚡ Teleport] [✖ Stop]
+    local userBtnParent = stopTrackBtn.Parent
+    local uBtnY = stopTrackBtn.Position.Y.Offset
+    local uBtnH = stopTrackBtn.Size.Y.Offset
+
+    local spectateUserBtn = makeButton(
+        userBtnParent,
+        "👁️ Intip: OFF",
+        UDim2.new(0, 0, 0, uBtnY),
+        UDim2.new(0.35, -2, 0, uBtnH),
+        Color3.fromRGB(36, 41, 50)
+    )
+    spectateUserBtn.TextSize = 10
+
+    tpTrackBtn.Position = UDim2.new(0.35, 2, 0, uBtnY)
+    tpTrackBtn.Size = UDim2.new(0.35, -2, 0, uBtnH)
+    tpTrackBtn.TextSize = 10
+
+    stopTrackBtn.Position = UDim2.new(0.70, 2, 0, uBtnY)
+    stopTrackBtn.Size = UDim2.new(0.30, -2, 0, uBtnH)
+    stopTrackBtn.TextSize = 10
+
+    local function updateSpectateButtonUI()
+        spectateUserBtn.Text = "👁️ Intip: " .. (isSpectatingUser and "ON" or "OFF")
+        spectateUserBtn.BackgroundColor3 = isSpectatingUser and Color3.fromRGB(155, 85, 225) or Color3.fromRGB(36, 41, 50)
+    end
+
+    local function stopSpectatingUser()
+        isSpectatingUser = false
+        updateSpectateButtonUI()
+        local cam = workspace.CurrentCamera
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if cam and hum and not isCustomCamEnabled then
+            cam.CameraType = Enum.CameraType.Custom
+            cam.CameraSubject = hum
+        end
+    end
 
     local function clearPlayerLocator()
         trackedPlayer = nil
+        stopSpectatingUser()
         if trackerHighlight then pcall(function() trackerHighlight:Destroy() end); trackerHighlight = nil end
         if trackerBillboard then pcall(function() trackerBillboard:Destroy() end); trackerBillboard = nil end
         if trackerBeam then pcall(function() trackerBeam:Destroy() end); trackerBeam = nil end
@@ -337,7 +479,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
                             showToast("Pelacak lokasi dimatikan.")
                         else
                             createLocatorForPlayer(plr)
-                            showToast("Melacak lokasi: " .. dName)
+                            showToast("Menandai user: " .. dName)
                         end
                         refreshPlayerList()
                     end)
@@ -350,6 +492,21 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         end)
     end
 
+    spectateUserBtn.MouseButton1Click:Connect(function()
+        if not trackedPlayer or not trackedPlayer.Parent then
+            showToast("Klik/tandai salah satu user dulu!", Color3.fromRGB(165, 65, 55))
+            return
+        end
+        isSpectatingUser = not isSpectatingUser
+        updateSpectateButtonUI()
+        if isSpectatingUser then
+            showToast("👁️ Mengintip kamera: " .. trackedPlayer.DisplayName, Color3.fromRGB(140, 85, 215))
+        else
+            stopSpectatingUser()
+            showToast("Kamera kembali ke karakter sendiri.")
+        end
+    end)
+
     clearUserBtn.MouseButton1Click:Connect(function()
         userSearchBox.Text = ""
         refreshPlayerList()
@@ -360,7 +517,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     stopTrackBtn.MouseButton1Click:Connect(function()
         clearPlayerLocator()
         refreshPlayerList()
-        showToast("Pelacak lokasi dimatikan.")
+        showToast("Pelacak & Intip dimatikan.")
     end)
 
     tpTrackBtn.MouseButton1Click:Connect(function()
@@ -383,25 +540,19 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     end)
     refreshPlayerList()
 
-    orbitDirBtn.MouseButton1Click:Connect(function()
-        orbitDirection = -orbitDirection
-        orbitDirBtn.Text = orbitDirection == 1 and "🔄 Kanan" or "🔄 Kiri"
-        syncWorldConfig()
-    end)
-
-    orbitResetBtn.MouseButton1Click:Connect(function()
-        orbitDistance, orbitHeight, orbitSpeed = 10.0, 3.5, 0.55
-        orbitLookHeight, orbitFOV, orbitDirection = 1.0, 70, 1
-        orbitDirBtn.Text = "🔄 Kanan"
-        for _, fn in ipairs(orbitUiUpdaters) do fn() end
-        syncWorldConfig()
-    end)
-
+    -- ======================== PERBAIKAN TEMBOK TRANSPARAN & TEMBOK RAHASIA ========================
     local function restoreCharacterCollision()
         for part, canCol in pairs(savedCanCollide) do
             if part and part.Parent then part.CanCollide = canCol end
         end
         savedCanCollide = {}
+    end
+
+    local function clearSecretWallHighlights()
+        for part, box in pairs(secretWallBoxes) do
+            if box then pcall(function() box:Destroy() end) end
+        end
+        secretWallBoxes = {}
     end
 
     local function restoreFadedWalls()
@@ -418,8 +569,68 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
             else
                 player.DevCameraOcclusionMode = origOcclusionMode
                 restoreFadedWalls()
+                clearSecretWallHighlights()
             end
         end)
+    end
+
+    local function scanWallsAndSecretPassages(cam, focusPos, ignoreChar)
+        -- 1. Buat tembok yang menghalangi kamera jadi transparan
+        restoreFadedWalls()
+        local okParts, obstructing = pcall(function()
+            return cam:GetPartsObscuringTarget({focusPos}, {ignoreChar})
+        end)
+        if okParts and type(obstructing) == "table" then
+            for _, part in ipairs(obstructing) do
+                if part:IsA("BasePart") and part.Transparency < 0.7 then
+                    fadedWallParts[part] = part.LocalTransparencyModifier
+                    part.LocalTransparencyModifier = 0.82
+                end
+            end
+        end
+
+        -- 2. Deteksi Tembok Rahasia / Tembok Palsu (CanCollide == false atau tembus) di sekitar karakter tiap 0.35 detik
+        local now = tick()
+        if now - lastWallScan < 0.35 then return end
+        lastWallScan = now
+
+        -- Bersihkan highlight tembok yang sudah jauh
+        for part, box in pairs(secretWallBoxes) do
+            if not part or not part.Parent or (part.Position - focusPos).Magnitude > 130 then
+                if box then pcall(function() box:Destroy() end) end
+                secretWallBoxes[part] = nil
+            end
+        end
+
+        local overlapParams = OverlapParams.new()
+        overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+        overlapParams.FilterDescendantsInstances = {ignoreChar}
+
+        local nearbyParts = workspace:GetPartBoundsInRadius(focusPos, 110, overlapParams)
+        for _, part in ipairs(nearbyParts) do
+            if part:IsA("BasePart") and not part:IsDescendantOf(gui) then
+                -- Ciri khas tembok rahasia / pintu tersembunyi di Roblox:
+                -- Ukuran cukup besar menyerupai dinding/lantai, tidak bisa ditabrak (CanCollide = false),
+                -- atau tembok semi-transparan yang sengaja disamarkan
+                local sz = part.Size
+                local isWallSized = (sz.X >= 3 or sz.Z >= 3) and sz.Y >= 3 and (sz.X * sz.Y * sz.Z) >= 12
+                local isCharacterPart = part.Parent and part.Parent:FindFirstChildOfClass("Humanoid")
+
+                if isWallSized and not isCharacterPart and not part.CanCollide and part.Transparency < 0.95 then
+                    if not secretWallBoxes[part] then
+                        local selBox = Instance.new("SelectionBox")
+                        selBox.Name = "KoplingSecretWallESP"
+                        selBox.Adornee = part
+                        selBox.Color3 = Color3.fromRGB(45, 255, 155)
+                        selBox.SurfaceColor3 = Color3.fromRGB(45, 255, 155)
+                        selBox.SurfaceTransparency = 0.78
+                        selBox.LineThickness = 0.04
+                        selBox.Parent = gui
+                        secretWallBoxes[part] = selBox
+                    end
+                end
+            end
+        end
     end
 
     -- ======================== LOGIKA SHIFTLOCK CUSTOM ========================
@@ -465,6 +676,87 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         showToast("Tombol Floating ShiftLock " .. (isShiftPinEnabled and "Ditampilkan" or "Disembunyikan"))
     end)
 
+    -- ======================== KONTROL MULTI-MODE KAMERA ========================
+    local function resetCameraToNormal()
+        local cam = workspace.CurrentCamera
+        local targetHum = nil
+        if isSpectatingUser and trackedPlayer and trackedPlayer.Character then
+            targetHum = trackedPlayer.Character:FindFirstChildOfClass("Humanoid")
+        else
+            targetHum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        end
+
+        freeCamPos = nil
+        if cam then
+            cam.CameraType = Enum.CameraType.Custom
+            cam.FieldOfView = savedDefaultFOV
+            if targetHum then cam.CameraSubject = targetHum end
+        end
+    end
+
+    local function updateCameraButtonVisuals()
+        local shortNames = {"Orbit", "FreeCam", "Drone", "1st-Person"}
+        local modeShort = shortNames[camModeIndex] or "Orbit"
+        orbitBtn.Text = isCustomCamEnabled and ("🎥 " .. modeShort .. ": ON") or ("🎥 " .. modeShort .. ": OFF")
+        orbitBtn.BackgroundColor3 = isCustomCamEnabled and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(36, 42, 52)
+
+        camModeCycleBtn.Text = "🎥 Mode: " .. camModeNames[camModeIndex]
+        orbitToggleInsideBtn.Text = "Status Kamera (" .. modeShort .. "): " .. (isCustomCamEnabled and "ON" or "OFF")
+        orbitToggleInsideBtn.BackgroundColor3 = isCustomCamEnabled and Color3.fromRGB(135, 75, 205) or Color3.fromRGB(39, 45, 55)
+    end
+
+    local function toggleCustomCameraState()
+        isCustomCamEnabled = not isCustomCamEnabled
+        if isCustomCamEnabled then
+            local cam = workspace.CurrentCamera
+            if cam then
+                savedDefaultFOV = cam.FieldOfView
+                freeCamPos = cam.CFrame.Position
+            end
+        else
+            resetCameraToNormal()
+        end
+        updateCameraButtonVisuals()
+        showToast("Kamera (" .. camModeNames[camModeIndex] .. ") " .. (isCustomCamEnabled and "ON" or "OFF"), Color3.fromRGB(140, 85, 215))
+    end
+
+    camModeCycleBtn.MouseButton1Click:Connect(function()
+        camModeIndex = (camModeIndex % #camModeNames) + 1
+        local cam = workspace.CurrentCamera
+        if cam then freeCamPos = cam.CFrame.Position end
+        updateCameraButtonVisuals()
+        syncWorldConfig()
+        showToast("Mode Kamera: " .. camModeNames[camModeIndex])
+    end)
+
+    orbitDirBtn.MouseButton1Click:Connect(function()
+        orbitDirection = -orbitDirection
+        orbitDirBtn.Text = orbitDirection == 1 and "🔄 Arah: Kanan" or "🔄 Arah: Kiri"
+        syncWorldConfig()
+    end)
+
+    orbitResetBtn.MouseButton1Click:Connect(function()
+        orbitDistance, orbitHeight, orbitSpeed = 10.0, 3.5, 0.55
+        orbitLookHeight, orbitFOV, orbitDirection, flySpeed = 1.0, 70, 1, 50
+        orbitDirBtn.Text = "🔄 Arah: Kanan"
+        for _, fn in ipairs(orbitUiUpdaters) do fn() end
+        syncWorldConfig()
+        showToast("Pengaturan Kamera & Fly direset!")
+    end)
+
+    orbitBtn.MouseButton1Click:Connect(toggleCustomCameraState)
+    orbitToggleInsideBtn.MouseButton1Click:Connect(toggleCustomCameraState)
+
+    orbitCfgBtn.MouseButton1Click:Connect(function()
+        orbitPanel.Visible = not orbitPanel.Visible
+        orbitCfgBtn.BackgroundColor3 = orbitPanel.Visible and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(52, 44, 72)
+    end)
+
+    closeOrbitPanelBtn.MouseButton1Click:Connect(function()
+        orbitPanel.Visible = false
+        orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(52, 44, 72)
+    end)
+
     -- Terapkan status awal dari Config
     noclipBtn.Text = "👻 NoClip: " .. (isNoClipEnabled and "ON" or "OFF")
     noclipBtn.BackgroundColor3 = isNoClipEnabled and Color3.fromRGB(205, 115, 45) or Color3.fromRGB(36, 41, 50)
@@ -474,6 +766,7 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
     if isWallViewEnabled then applyWallOcclusionMode() end
     if isCinematicBars then setCinematicBars(true, true) end
     updateShiftLockVisuals()
+    updateCameraButtonVisuals()
 
     noclipBtn.MouseButton1Click:Connect(function()
         isNoClipEnabled = not isNoClipEnabled
@@ -490,66 +783,29 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         wallViewBtn.BackgroundColor3 = isWallViewEnabled and Color3.fromRGB(50, 140, 210) or Color3.fromRGB(36, 41, 50)
         applyWallOcclusionMode()
         syncWorldConfig()
-        showToast("View Tembok Transparan " .. (isWallViewEnabled and "ON" or "OFF"))
+        showToast("Tembok Transparan & Jalur Rahasia " .. (isWallViewEnabled and "ON" or "OFF"))
     end)
 
+    -- ======================== LOOP FISIKA NOCLIP & FLY ADMIN ========================
     RunService.Stepped:Connect(function()
-        if not gui.Parent or not isNoClipEnabled then return end
+        if not gui.Parent then return end
         local char = player.Character
         if not char then return end
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                if savedCanCollide[part] == nil then
-                    savedCanCollide[part] = part.CanCollide
+
+        -- NoClip aktif otomatis jika tombol NoClip ON atau saat Fly Admin ON
+        if isNoClipEnabled or isFlyEnabled then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    if savedCanCollide[part] == nil then
+                        savedCanCollide[part] = part.CanCollide
+                    end
+                    part.CanCollide = false
                 end
-                part.CanCollide = false
             end
         end
     end)
 
-    local function resetCameraToNormal()
-        local cam = workspace.CurrentCamera
-        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if cam then
-            cam.CameraType = Enum.CameraType.Custom
-            cam.FieldOfView = savedDefaultFOV
-            if hum then cam.CameraSubject = hum end
-        end
-    end
-
-    local function updateOrbitButtonVisuals()
-        orbitBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(36, 42, 52)
-        orbitToggleInsideBtn.Text = "Status Orbit: " .. (isOrbitEnabled and "ON (Aktif)" or "OFF (Mati)")
-        orbitToggleInsideBtn.BackgroundColor3 = isOrbitEnabled and Color3.fromRGB(135, 75, 205) or Color3.fromRGB(39, 45, 55)
-    end
-
-    local function toggleOrbitState()
-        isOrbitEnabled = not isOrbitEnabled
-        if isOrbitEnabled then
-            local cam = workspace.CurrentCamera
-            if cam then savedDefaultFOV = cam.FieldOfView end
-            if autoBarsOnOrbit then setCinematicBars(true) end
-        else
-            resetCameraToNormal()
-            if autoBarsOnOrbit then setCinematicBars(false) end
-        end
-        updateOrbitButtonVisuals()
-        showToast("Kamera Orbit " .. (isOrbitEnabled and "ON" or "OFF"), Color3.fromRGB(140, 85, 215))
-    end
-
-    orbitBtn.MouseButton1Click:Connect(toggleOrbitState)
-    orbitToggleInsideBtn.MouseButton1Click:Connect(toggleOrbitState)
-
-    orbitCfgBtn.MouseButton1Click:Connect(function()
-        orbitPanel.Visible = not orbitPanel.Visible
-        orbitCfgBtn.BackgroundColor3 = orbitPanel.Visible and Color3.fromRGB(165, 105, 235) or Color3.fromRGB(52, 44, 72)
-    end)
-
-    closeOrbitPanelBtn.MouseButton1Click:Connect(function()
-        orbitPanel.Visible = false
-        orbitCfgBtn.BackgroundColor3 = Color3.fromRGB(52, 44, 72)
-    end)
-
+    -- ======================== LOOP RENDERSTEPPED UTAMA ========================
     RunService.RenderStepped:Connect(function(dt)
         if not gui.Parent then return end
 
@@ -558,11 +814,67 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         local cam = workspace.CurrentCamera
 
-        -- 1. Update Pelacak User
+        -- 1. Update Fly Admin (Mengikuti arah kamera & analog/WASD)
+        if isFlyEnabled and hrp and hum and cam then
+            if not flyBV or flyBV.Parent ~= hrp then
+                if flyBV then pcall(function() flyBV:Destroy() end) end
+                flyBV = Instance.new("BodyVelocity")
+                flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                flyBV.Velocity = Vector3.new(0, 0, 0)
+                flyBV.Parent = hrp
+            end
+            if not flyBG or flyBG.Parent ~= hrp then
+                if flyBG then pcall(function() flyBG:Destroy() end) end
+                flyBG = Instance.new("BodyGyro")
+                flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+                flyBG.P = 9e4
+                flyBG.D = 1000
+                flyBG.Parent = hrp
+            end
+
+            hum.PlatformStand = true
+            flyBG.CFrame = cam.CFrame
+
+            local moveDir = hum.MoveDirection
+            local targetVel = Vector3.new(0, 0, 0)
+
+            -- Jika mode FreeCam sedang mati, gerakkan karakter terbang sesuai arah kamera
+            if not (isCustomCamEnabled and camModeIndex == 2) then
+                if moveDir.Magnitude > 0.05 then
+                    local camCF = cam.CFrame
+                    local flatLook = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
+                    local flatRight = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
+                    if flatLook.Magnitude > 0.001 then flatLook = flatLook.Unit end
+                    if flatRight.Magnitude > 0.001 then flatRight = flatRight.Unit end
+
+                    local forwardAmt = moveDir:Dot(flatLook)
+                    local rightAmt = moveDir:Dot(flatRight)
+                    targetVel = (camCF.LookVector * forwardAmt + camCF.RightVector * rightAmt) * flySpeed
+                end
+
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                    targetVel += Vector3.new(0, flySpeed * 0.85, 0)
+                elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                    targetVel -= Vector3.new(0, flySpeed * 0.85, 0)
+                end
+            end
+
+            flyBV.Velocity = flyBV.Velocity:Lerp(targetVel, math.clamp(dt * 12, 0, 1))
+        elseif flyBV or flyBG then
+            stopFlyPhysics()
+        end
+
+        -- 2. Update Pelacak & Intip User
+        local activeTargetChar = char
+        local activeTargetHrp = hrp
+        local activeTargetHum = hum
+
         if trackedPlayer and trackedPlayer.Parent then
             local tChar = trackedPlayer.Character
             local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
             local tHead = tChar and (tChar:FindFirstChild("Head") or tHrp)
+            local tHum = tChar and tChar:FindFirstChildOfClass("Humanoid")
+
             if tChar and tHrp then
                 if trackerHighlight then trackerHighlight.Adornee = tChar end
                 if trackerBillboard then trackerBillboard.Adornee = tHead end
@@ -583,42 +895,88 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
                     trackerBeam.Attachment1 = trackerAtt1
                     trackerBeam.Enabled = true
                 end
+
+                if isSpectatingUser then
+                    activeTargetChar = tChar
+                    activeTargetHrp = tHrp
+                    activeTargetHum = tHum
+                    if cam and not isCustomCamEnabled and tHum then
+                        cam.CameraType = Enum.CameraType.Custom
+                        cam.CameraSubject = tHum
+                    end
+                end
             else
                 if trackerHighlight then trackerHighlight.Adornee = nil end
                 if trackerBillboard then trackerBillboard.Adornee = nil end
                 if trackerBeam then trackerBeam.Enabled = false end
             end
+        elseif isSpectatingUser then
+            stopSpectatingUser()
         end
 
-        -- 2. Update Kamera Orbit
-        if isOrbitEnabled and hrp and hum and cam then
+        -- 3. Update Multi-Mode Kamera (Orbit / FreeCam / Drone / First-Person)
+        if isCustomCamEnabled and activeTargetHrp and cam then
             cam.CameraType = Enum.CameraType.Scriptable
             cam.FieldOfView = cam.FieldOfView + (orbitFOV - cam.FieldOfView) * math.clamp(dt * 10, 0, 1)
 
-            orbitAngle = orbitAngle + (dt * orbitSpeed * orbitDirection)
-            local offset = Vector3.new(
-                math.cos(orbitAngle) * orbitDistance,
-                orbitHeight,
-                math.sin(orbitAngle) * orbitDistance
-            )
-            local orbitPos = hrp.Position + offset
-            local lookAtPos = hrp.Position + Vector3.new(0, orbitLookHeight, 0)
-            cam.CFrame = CFrame.new(orbitPos, lookAtPos)
-            wasOrbitCam = true
-        elseif wasOrbitCam then
-            wasOrbitCam = false
+            if camModeIndex == 1 then
+                -- Mode 1: Orbit Putar
+                orbitAngle = orbitAngle + (dt * orbitSpeed * orbitDirection)
+                local offset = Vector3.new(
+                    math.cos(orbitAngle) * orbitDistance,
+                    orbitHeight,
+                    math.sin(orbitAngle) * orbitDistance
+                )
+                local orbitPos = activeTargetHrp.Position + offset
+                local lookAtPos = activeTargetHrp.Position + Vector3.new(0, orbitLookHeight, 0)
+                cam.CFrame = CFrame.new(orbitPos, lookAtPos)
+
+            elseif camModeIndex == 2 then
+                -- Mode 2: FreeCam Bebas (Kamera melayang bebas sesuai arah pandang & joystick)
+                if not freeCamPos then freeCamPos = cam.CFrame.Position end
+                local rotOnly = cam.CFrame - cam.CFrame.Position
+                if hum and hum.MoveDirection.Magnitude > 0.05 then
+                    local camCF = cam.CFrame
+                    local flatLook = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
+                    local flatRight = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
+                    if flatLook.Magnitude > 0.001 then flatLook = flatLook.Unit end
+                    if flatRight.Magnitude > 0.001 then flatRight = flatRight.Unit end
+                    local forwardAmt = hum.MoveDirection:Dot(flatLook)
+                    local rightAmt = hum.MoveDirection:Dot(flatRight)
+                    freeCamPos = freeCamPos + (camCF.LookVector * forwardAmt + camCF.RightVector * rightAmt) * (flySpeed * dt)
+                end
+                cam.CFrame = CFrame.new(freeCamPos) * rotOnly
+
+            elseif camModeIndex == 3 then
+                -- Mode 3: Drone Atas (Top-Down View)
+                orbitAngle = orbitAngle + (dt * orbitSpeed * 0.25 * orbitDirection)
+                local topHeight = math.max(8, orbitDistance + orbitHeight)
+                local camPos = activeTargetHrp.Position + Vector3.new(math.cos(orbitAngle) * 2.5, topHeight, math.sin(orbitAngle) * 2.5)
+                local lookAtPos = activeTargetHrp.Position + Vector3.new(0, orbitLookHeight, 0)
+                cam.CFrame = CFrame.new(camPos, lookAtPos)
+
+            elseif camModeIndex == 4 then
+                -- Mode 4: First-Person Sinematik (Sudut pandang dari kepala target)
+                local head = activeTargetChar and activeTargetChar:FindFirstChild("Head")
+                local eyePos = head and (head.Position + Vector3.new(0, 0.2, 0)) or (activeTargetHrp.Position + Vector3.new(0, 1.6, 0))
+                local rotOnly = cam.CFrame - cam.CFrame.Position
+                cam.CFrame = CFrame.new(eyePos) * rotOnly
+            end
+
+            wasCustomCam = true
+        elseif wasCustomCam then
+            wasCustomCam = false
             resetCameraToNormal()
         end
 
-        -- 3. Update ShiftLock (Aktif jika Orbit sedang mati)
-        if isShiftLockEnabled and not isOrbitEnabled and hrp and hum and cam then
+        -- 4. Update ShiftLock (Aktif jika Kamera Scriptable sedang mati)
+        if isShiftLockEnabled and not isCustomCamEnabled and hrp and hum and cam then
             if hum.Sit or hum.Health <= 0 then
                 hum.AutoRotate = true
                 hum.CameraOffset = Vector3.new(0, 0, 0)
                 crosshairDot.Visible = false
             else
                 hum.AutoRotate = false
-                -- Jika tidak sedang First-Person, beri offset bahu kanan khas ShiftLock (1.75 stud)
                 local camDist = (cam.CFrame.Position - cam.Focus.Position).Magnitude
                 if camDist > 1.2 then
                     hum.CameraOffset = hum.CameraOffset:Lerp(Vector3.new(1.75, 0, 0), math.clamp(dt * 15, 0, 1))
@@ -633,34 +991,24 @@ function WorldModule.Init(UI, showToast, Config, saveConfig)
                 end
                 crosshairDot.Visible = true
             end
-        elseif not isShiftLockEnabled or isOrbitEnabled then
+        elseif not isShiftLockEnabled or isCustomCamEnabled then
             crosshairDot.Visible = false
-            if isOrbitEnabled and hum then
+            if isCustomCamEnabled and hum then
                 hum.AutoRotate = true
                 hum.CameraOffset = Vector3.new(0, 0, 0)
             end
         end
 
-        -- 4. Update View Tembok Transparan
-        if isWallViewEnabled and cam and hrp then
-            restoreFadedWalls()
-            local okParts, obstructing = pcall(function()
-                return cam:GetPartsObscuringTarget({hrp.Position}, {char})
-            end)
-            if okParts and type(obstructing) == "table" then
-                for _, part in ipairs(obstructing) do
-                    if part:IsA("BasePart") then
-                        fadedWallParts[part] = part.LocalTransparencyModifier
-                        part.LocalTransparencyModifier = 0.85
-                    end
-                end
-            end
+        -- 5. Update View Tembok Transparan & Tembok Rahasia
+        if isWallViewEnabled and cam and activeTargetHrp then
+            scanWallsAndSecretPassages(cam, activeTargetHrp.Position, activeTargetChar)
         end
     end)
 
     return {
         Cleanup = function()
-            if isOrbitEnabled then isOrbitEnabled = false; resetCameraToNormal() end
+            if isCustomCamEnabled then isCustomCamEnabled = false; resetCameraToNormal() end
+            if isFlyEnabled then isFlyEnabled = false; stopFlyPhysics() end
             if isNoClipEnabled then isNoClipEnabled = false; restoreCharacterCollision() end
             if isWallViewEnabled then isWallViewEnabled = false; applyWallOcclusionMode() end
             if isShiftLockEnabled then isShiftLockEnabled = false; releaseShiftLockState() end
